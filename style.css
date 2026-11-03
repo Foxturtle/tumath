@@ -129,7 +129,16 @@ h2, h3, p { margin: 0; }
   display: flex; align-items: center; gap: 16px; flex-wrap: wrap; justify-content: center;
   background: var(--accent-soft); border-radius: 20px; padding: 14px 20px; font-size: 1.15rem; font-weight: 600;
 }
-@media (max-width: 640px) { .choices { grid-template-columns: 1fr; } }
+.home { overflow-y: auto; justify-content: safe center; touch-action: pan-y; }
+@media (max-width: 640px) {
+  .home { gap: 16px; }
+  .choices { grid-template-columns: 1fr; gap: 12px; }
+  .choice { flex-direction: row; justify-content: flex-start; gap: 16px; padding: 14px 20px; border-radius: 22px; text-align: left; }
+  .choice b { font-size: 2.2rem; margin: 0; flex: none; }
+  .choice span { font-size: 1.5rem; }
+  .choice small { margin-left: auto; }
+  .retry-btn { font-size: 1.15rem; padding: 12px 20px; }
+}
 
 /* ---------- 학습지 ---------- */
 .page { flex: 1; min-height: 0; display: grid; gap: 12px; padding: 4px 16px; }
@@ -260,4 +269,6 @@ input[type=text] { -webkit-user-select: text; user-select: text; }
 .dlg h3 { font-size: 1.4rem; }
 .dlg .dan-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
 .dlg .dan-grid .btn { font-size: 1.3rem; padding: .7em 0; }
-.dlg .dan-grid .btn.primary, .dlg .dan-grid .btn:last-child { grid-column: span 2; }
+.dlg .hint { margin-top: -12px; font-size: 1rem; color: var(--muted); }
+.dlg .dan.on { background: var(--accent-soft); border-color: var(--accent); color: #b5531c; }
+.dlg .dan.on::before { content: '✓ '; }

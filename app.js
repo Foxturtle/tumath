@@ -101,12 +101,12 @@ function makeMul(dan) {
   const row = i => [{ op: '×', a: dan, b: L[i], fmt: 'h' }, { op: '×', a: dan, b: R[i], fmt: 'h' }];
   return [0, 1].map(pg => [0, 1, 2, 3, 4].flatMap(r => row(pg * 5 + r)));
 }
-function makeMulMixed() {
-  const seen = new Set(), out = [];
-  while (out.length < 20) {
-    const p = { op: '×', a: rnd(2, 9), b: rnd(1, 10), fmt: 'h' };
-    if (!seen.has(keyOf(p))) { seen.add(keyOf(p)); out.push(p); }
-  }
+// 고른 단들을 섞어 20문제. 단마다 고르게 나누고(남는 문제는 무작위 단에), 같은 단 안에서는 곱하는 수가 겹치지 않음
+function makeMulMixed(dans) {
+  const counts = dans.map(() => Math.floor(20 / dans.length));
+  shuffle([...dans.keys()]).slice(0, 20 % dans.length).forEach(i => counts[i]++);
+  const out = shuffle(dans.flatMap((d, i) =>
+    shuffle([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]).slice(0, counts[i]).map(b => ({ op: '×', a: d, b, fmt: 'h' }))));
   return [out.slice(0, 10), out.slice(10)];
 }
 function paginate(probs) {
@@ -335,13 +335,38 @@ function home() {
     else if (a === 'parent') requirePin(parentMenu, home);
   };
 }
-async function chooseMul() {
-  const v = await modal('<h3>몇 단을 할까요?</h3>',
-    [...[2, 3, 4, 5, 6, 7, 8, 9].map(d => ({ label: `${d}단`, value: d })),
-      { label: '섞어서', value: 'mix', primary: true }, { label: '취소', value: null }], 'dan-grid');
-  if (v == null) return;
-  if (v === 'mix') begin('구구단 섞어서', makeMulMixed());
-  else begin(`${v}단`, makeMul(v));
+// 단 고르기: 하나면 그 단만, 여러 개면 섞어서. 지난번 고른 단을 기억함
+function chooseMul() {
+  const ALL = [2, 3, 4, 5, 6, 7, 8, 9], sel = new Set(S.mulDans || []), m = $('#modal');
+  m.innerHTML = `<div class="dlg"><h3>몇 단을 할까요?</h3><p class="hint">여러 개를 고르면 섞어서 나와요</p>
+    <div class="dan-grid">${ALL.map(d => `<button class="btn dan" data-d="${d}">${d}단</button>`).join('')}</div>
+    <div class="row"><button class="btn" data-act="all"></button></div>
+    <div class="row"><button class="btn" data-act="cancel">취소</button><button class="btn primary" data-act="go"></button></div></div>`;
+  const paint = () => {
+    $$('.dan', m).forEach(b => b.classList.toggle('on', sel.has(+b.dataset.d)));
+    const go = $('[data-act=go]', m), n = sel.size;
+    go.disabled = !n;
+    go.textContent = !n ? '단을 골라 주세요' : n === 1 ? `${[...sel][0]}단 시작` : `${n}개 단 섞어서 시작`;
+    $('[data-act=all]', m).textContent = n === ALL.length ? '모두 빼기' : '모두 고르기';
+  };
+  paint();
+  m.hidden = false;
+  m.onclick = e => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    const a = b.dataset.act;
+    if (b.dataset.d) { const d = +b.dataset.d; sel.has(d) ? sel.delete(d) : sel.add(d); paint(); }
+    else if (a === 'all') { if (sel.size === ALL.length) sel.clear(); else ALL.forEach(d => sel.add(d)); paint(); }
+    else if (a === 'cancel') m.hidden = true;
+    else if (a === 'go' && sel.size) {
+      m.hidden = true;
+      const dans = [...sel].sort((x, y) => x - y);
+      S.mulDans = dans;
+      save();
+      if (dans.length === 1) begin(`${dans[0]}단`, makeMul(dans[0]));
+      else begin(dans.length === ALL.length ? '구구단 섞어서' : `${dans.join('·')}단 섞어서`, makeMulMixed(dans));
+    }
+  };
 }
 
 // ---------- 화면: 학습지 ----------

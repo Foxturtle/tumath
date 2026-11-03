@@ -14,7 +14,7 @@ self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
   // 사이트가 내려가 404 등이 와도 저장해 둔 파일로 계속 동작
   const cached = () => caches.match(e.request, { ignoreSearch: true });
-  e.respondWith(fetch(e.request).then(r => {
+  e.respondWith(fetch(e.request, { cache: 'no-cache' }).then(r => {
     if (!r.ok) return cached().then(c => c || r);
     const copy = r.clone();
     caches.open(CACHE).then(c => c.put(e.request, copy));

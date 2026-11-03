@@ -19,6 +19,7 @@ html, body {
   user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
   touch-action: manipulation; overscroll-behavior: none;
 }
+html, body { overflow: hidden; }
 #app { height: 100vh; height: 100dvh; display: flex; flex-direction: column; }
 button { font: inherit; color: inherit; border: 0; background: none; cursor: pointer; padding: 0; }
 h2, h3, p { margin: 0; }
@@ -111,8 +112,21 @@ h2, h3, p { margin: 0; }
 }
 .hline .expr { white-space: nowrap; margin-right: calc(var(--u) * .2); }
 
-.nav { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px 14px; }
+.nav {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 10px 16px max(14px, env(safe-area-inset-bottom));
+}
 .nav .btn { min-width: 150px; font-size: 1.25rem; padding: .7em 1em; }
+@media (max-width: 600px) {
+  .nav { flex-wrap: wrap; row-gap: 4px; padding-top: 4px; }
+  .nav .btn { min-width: 0; flex: none; font-size: 1.05rem; padding: .7em .9em; }
+  .dots { order: -1; width: 100%; justify-content: center; gap: 0; }
+  .dots button { padding: 6px; }
+  .dots i { width: 12px; height: 12px; }
+  .bar .title { font-size: 1.1rem; }
+  .bar .title small { display: block; margin-left: 0; }
+  .tool { width: 46px; }
+}
 .dots { display: flex; gap: 4px; }
 .dots button { padding: 8px; }
 .dots i { display: block; width: 16px; height: 16px; border-radius: 50%; background: var(--line); }

@@ -222,7 +222,18 @@ h2, h3, p { margin: 0; }
 }
 .card.h .answer-tag { top: 4%; bottom: auto; }
 .grade-help { padding: 0 16px 6px; color: var(--muted); font-size: 1.05rem; }
-.grade-help b { color: var(--red); }
+.grade-help b { border-radius: 6px; padding: 0 .3em; }
+.grade-help b.u { color: #8a6a00; background: #fff1b8; }
+.grade-help b.r { color: #44515e; background: #eef1f4; }
+.grade-help b.g { color: var(--good); background: var(--good-soft); }
+.reco {
+  position: absolute; left: 4%; bottom: 4%; font-size: clamp(28px, 13cqmin, 48px); font-weight: 700;
+  color: var(--red); background: #fdeceb; border-radius: 10px; padding: .05em .4em;
+}
+.reco.ok { color: #44515e; background: #eef1f4; }
+.reco.unsure { color: #8a6a00; background: #fff1b8; }
+.card:has(.reco.unsure) { box-shadow: inset 0 0 0 6px #ffd84d; }
+.card.h .reco { top: 4%; bottom: auto; }
 
 .result-top { display: flex; align-items: center; justify-content: center; gap: 28px; flex-wrap: wrap; padding: 4px 16px 12px; }
 .stars { font-size: 2.6rem; color: #f5b301; letter-spacing: 4px; }

@@ -174,6 +174,20 @@ function drawStroke(ctx, s, w, h) {
   ctx.stroke();
 }
 
+// 카드 크기와 답 칸 위치 (칸 위치는 카드 대비 N 단위). 채점 때 글씨를 읽을 영역을 정하는 데 씀
+function cardGeo(card) {
+  const r = $('canvas', card).getBoundingClientRect();
+  if (!r.width || !r.height) return null;
+  return {
+    w: card.clientWidth, h: card.clientHeight,
+    boxes: $$('.box', card).map(b => {
+      const q = b.getBoundingClientRect();
+      return [q.left - r.left, q.top - r.top, q.right - r.left, q.bottom - r.top]
+        .map((v, i) => Math.round(v / (i % 2 ? r.height : r.width) * N));
+    }),
+  };
+}
+
 // 카드 위에 손글씨 캔버스 연결. list()는 이 카드의 획 배열을 돌려줌.
 function attachInk(card, list, interactive) {
   const k = +card.dataset.k, cv = $('canvas', card), ctx = cv.getContext('2d');
@@ -405,6 +419,8 @@ function sheet() {
   const recordSize = () => {
     if (!main.isConnected || !main.clientWidth || !main.clientHeight) return;   // 화면 전환으로 사라질 때는 무시
     c.pageSize = [main.clientWidth, main.clientHeight];
+    c.geo = c.geo || {};
+    $$('.card', main).forEach(cd => { const g = cardGeo(cd); if (g) c.geo[cd.dataset.k] = g; });
     saveSoon();
   };
   recordSize();   // 바로 한 번 기록 (채점 화면 축소 페이지 비율용)
@@ -469,30 +485,83 @@ const paintMarks = marks => $$('.minis .card').forEach(cd => {
   cd.classList.toggle('is-x', marks[cd.dataset.k] === 'x');
 });
 
+// ---------- 글씨 읽기 (자동 채점) ----------
+const UNSURE = .7;   // 숫자 하나라도 이보다 자신 없으면 부모님 확인 표시
+
+async function recognize(c) {
+  await Digits.load();
+  const reco = {};
+  flat(c).forEach((p, k) => {
+    const strokes = c.ink[k] || [], g = c.geo && c.geo[k];
+    if (!strokes.length) { reco[k] = { text: '', conf: 1 }; return; }
+    if (!g || !g.boxes.length) { reco[k] = null; return; }          // 칸 위치 기록이 없는 옛 학습지
+    const px = strokes.map(s => s.pts.map((v, i) => v * (i % 2 ? g.h : g.w) / N));
+    const bx = g.boxes.map(b => b.map((v, i) => v * (i % 2 ? g.h : g.w) / N));
+    const bw = bx[0][2] - bx[0][0], bh = bx[0][3] - bx[0][1], last = bx[bx.length - 1];
+    // 답을 쓰는 줄만 읽음: 세로셈은 칸 줄(위의 올림·내림 메모는 제외), 가로셈은 = 오른쪽
+    const region = p.fmt === 'v'
+      ? { x0: bx[0][0] - bw * .35, x1: last[2] + bw * .35, y0: bx[0][1] - bh * .35, y1: bx[0][3] + bh * .6 }
+      : { x0: bx[0][0] - bw * .5, x1: g.w, y0: bx[0][1] - bh * .4, y1: bx[0][3] + bh * .4 };
+    const r = Digits.read(px, region);
+    reco[k] = { text: r.text, conf: +r.conf.toFixed(3) };
+  });
+  return reco;
+}
+const recoOk = (p, r) => !!r && r.text === String(answer(p));
+const recoUnsure = r => r === null || (!!r && !!r.text && r.conf < UNSURE);
+
 // ---------- 화면: 채점 (부모) ----------
 function grade() {
   setScreen('grade');
   const c = S.current, probs = flat(c);
-  if (!c.marks) c.marks = probs.map((_, k) => hasInk(c, k) ? 'o' : 'x');
   const time = S.timer && c.elapsed ? ` · ⏱ ${fmtTime(c.elapsed)}` : '';
   app.innerHTML = `
     <header class="bar">
       <button class="icon-btn" data-act="home" aria-label="처음으로">🏠</button>
       <div class="title">채점하기<small>${c.title}${time}</small></div>
-      <button class="btn primary" data-act="finish">채점 완료 · <span id="sc"></span></button>
+      <button class="btn primary" data-act="finish" disabled>채점 완료 · <span id="sc">글씨 읽는 중…</span></button>
     </header>
-    <div class="grade-help">초록색이 정답이에요. 틀린 문제만 눌러서 <b>빗금</b>으로 바꿔 주세요. 빈칸은 미리 빗금으로 되어 있어요.</div>
+    <div class="grade-help">글씨를 읽어서 자동으로 채점했어요. <b class="r">✎</b>는 글씨에서 읽은 답, <b class="g">초록</b>은 정답이에요.
+      <b class="u">노란 칸</b>은 글씨가 애매한 문제예요. 잘못 채점된 문제는 눌러서 바꿔 주세요.</div>
     <div class="minis grading"></div>`;
   renderMinis(c, true);
   const refresh = () => { paintMarks(c.marks); $('#sc').textContent = `${c.marks.filter(m => m === 'o').length} / ${probs.length}`; };
-  refresh();
+  const ready = () => {
+    if (curScreen !== 'grade') return;
+    paintReco(c);
+    refresh();
+    $('[data-act=finish]').disabled = false;
+  };
+  if (c.marks) ready();
+  else {
+    recognize(c).then(reco => {
+      c.reco = reco;
+      c.marks = probs.map((p, k) => reco[k] === null ? 'o' : recoOk(p, reco[k]) ? 'o' : 'x');
+    }).catch(err => {
+      console.warn('recognize failed', err);   // 모델을 못 읽으면 예전처럼: 쓴 문제는 일단 맞음
+      c.marks = probs.map((_, k) => hasInk(c, k) ? 'o' : 'x');
+    }).then(() => { save(); ready(); });
+  }
   app.onclick = e => {
     const card = e.target.closest('.minis .card');
-    if (card) { const k = +card.dataset.k; c.marks[k] = c.marks[k] === 'o' ? 'x' : 'o'; refresh(); saveSoon(); return; }
+    if (card && c.marks) { const k = +card.dataset.k; c.marks[k] = c.marks[k] === 'o' ? 'x' : 'o'; refresh(); saveSoon(); return; }
     const a = e.target.closest('[data-act]')?.dataset.act;
     if (a === 'home') { save(); home(); }
-    else if (a === 'finish') finish();
+    else if (a === 'finish' && c.marks) finish();
   };
+}
+// 채점 화면 카드마다 "읽은 답" 표시
+function paintReco(c) {
+  if (!c.reco) return;
+  const probs = flat(c);
+  $$('.minis .card').forEach(cd => {
+    const k = +cd.dataset.k, r = c.reco[k];
+    if (r === undefined) return;
+    const el = document.createElement('div');
+    el.className = `reco${recoOk(probs[k], r) ? ' ok' : ''}${recoUnsure(r) ? ' unsure' : ''}`;
+    el.innerHTML = r === null ? '✎ ?' : r.text ? `✎ ${r.text}` : '✎ 빈칸';
+    cd.appendChild(el);
+  });
 }
 function finish() {
   const c = S.current, probs = flat(c);

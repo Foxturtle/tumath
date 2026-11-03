@@ -332,7 +332,7 @@ function home() {
     else if (a === 'retry') begin('틀린 문제 다시 풀기', paginate(S.retry.slice(0, 20).map(p => ({ ...p }))));
     else if (a === 'resume') sheet();
     else if (a === 'grade') requirePin(grade, home);
-    else if (a === 'parent') requirePin(parent, home);
+    else if (a === 'parent') requirePin(parentMenu, home);
   };
 }
 async function chooseMul() {
@@ -505,7 +505,7 @@ function result() {
 }
 
 // ---------- 화면: 부모님 메뉴 ----------
-function parent() {
+function parentMenu() {
   setScreen('parent');
   const rows = S.history.slice(0, 50).map(h => {
     const d = new Date(h.date).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -529,15 +529,16 @@ function parent() {
       </section>
       <section><h3>기록</h3>${rows ? `<table class="history">${rows}</table>` : '<p class="empty">아직 기록이 없어요.</p>'}</section>
     </main>`;
-  $('#name').onchange = e => { S.name = e.target.value.trim() || 'TU'; e.target.value = S.name; save(); };
+  $('#name').oninput = e => { S.name = e.target.value.trim() || 'TU'; saveSoon(); };
+  $('#name').onchange = e => { e.target.value = S.name; save(); };
   $('#touch').onchange = e => { S.allowTouch = e.target.checked; save(); };
-  $('#timer').onchange = e => { S.timer = e.target.checked; save(); parent(); };
+  $('#timer').onchange = e => { S.timer = e.target.checked; save(); parentMenu(); };
   app.onclick = async e => {
     const a = e.target.closest('[data-act]')?.dataset.act;
     if (a === 'home') home();
-    else if (a === 'pin') setPin(parent, parent);
+    else if (a === 'pin') setPin(parentMenu, parentMenu);
     else if (a === 'clear' && await modal('<p>다시 풀기 목록을 비울까요?</p>', [{ label: '취소', value: false }, { label: '비우기', value: true, primary: true }])) {
-      S.retry = []; save(); parent();
+      S.retry = []; save(); parentMenu();
     }
   };
 }

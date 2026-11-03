@@ -101,7 +101,7 @@ h2, h3, p { margin: 0; }
 @keyframes pulse { 50% { transform: scale(1.06); } }
 @media (prefers-reduced-motion: reduce) { .intro *, .intro *::before { animation: none !important; } }
 .bar .title .kid { color: var(--accent); }
-.name-input { width: 120px; font: inherit; font-size: 1.2rem; font-weight: 800; text-align: center; padding: 6px 10px; border: 2px solid var(--line); border-radius: 12px; color: var(--accent); }
+.name-input { flex: none; width: 120px; font: inherit; font-size: 1.2rem; font-weight: 800; text-align: center; padding: 6px 10px; border: 2px solid var(--line); border-radius: 12px; color: var(--accent); }
 
 /* ---------- 홈 ---------- */
 .home { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 28px; padding: 16px; }
@@ -246,7 +246,8 @@ h2, h3, p { margin: 0; }
 .parent h3 { font-size: 1.2rem; }
 .switch-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; font-size: 1.1rem; font-weight: 600; }
 .switch-row small { display: block; font-weight: 400; color: var(--muted); font-size: .9rem; margin-top: 2px; }
-.switch-row input { width: 28px; height: 28px; accent-color: var(--accent); }
+.switch-row input[type=checkbox] { flex: none; width: 28px; height: 28px; accent-color: var(--accent); }
+input[type=text] { -webkit-user-select: text; user-select: text; }
 .history { width: 100%; border-collapse: collapse; font-size: 1rem; }
 .history td { padding: 8px 4px; border-top: 1px solid var(--line); }
 .history td:last-child { text-align: right; font-weight: 700; }

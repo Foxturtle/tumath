@@ -259,6 +259,11 @@ function undo() {
 }
 
 // ---------- 화면: 시작 (앱을 열 때마다) ----------
+// 통통한 오각 별 (바깥 반지름 88, 안쪽 48)
+const STAR = Array.from({ length: 10 }, (_, i) => {
+  const r = i % 2 ? 48 : 88, a = (i * 36 - 90) * Math.PI / 180;
+  return `${(r * Math.cos(a)).toFixed(1)},${(r * Math.sin(a)).toFixed(1)}`;
+}).join(' ');
 function intro() {
   setScreen('intro');
   const n = kid(), h = new Date().getHours();
@@ -279,8 +284,18 @@ function intro() {
   app.innerHTML = `
     <main class="intro">
       <div class="floaters" aria-hidden="true">${floaters}</div>
-      <div class="badge" style="--fs:${len <= 2 ? .42 : len === 3 ? .32 : .22}">
-        <div class="letters">${letters}</div>
+      <div class="badge" style="--fs:${len <= 2 ? .3 : len === 3 ? .22 : .16}">
+        <div class="sway"><svg class="star" viewBox="-100 -100 200 200" aria-hidden="true">
+          <defs><linearGradient id="starFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#ffd45c"/><stop offset=".55" stop-color="#f7a531"/><stop offset="1" stop-color="#e98126"/>
+          </linearGradient></defs>
+          <g transform="translate(0 9)">
+            <polygon class="star-shade" points="${STAR}" transform="translate(0 7)"/>
+            <polygon class="star-body" points="${STAR}"/>
+            <polygon class="star-shine" points="${STAR}" transform="scale(.62) translate(-6 -10)"/>
+          </g>
+        </svg>
+        <div class="letters">${letters}</div></div>
         <i class="spark s1">★</i><i class="spark s2">★</i><i class="spark s3">✦</i>
       </div>
       <h1><b>${n}</b>만을 위한<br>연산 연습</h1>

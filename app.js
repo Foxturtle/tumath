@@ -7,12 +7,14 @@ const INK = '#1d3c8f';
 const app = document.getElementById('app');
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+const esc = s => String(s).replace(/[&<>"']/g, ch => `&#${ch.charCodeAt(0)};`);
+const kid = () => esc(S.name || 'TU');
 
 // ---------- 저장 ----------
 const KEY = 'tumath.v1';
 const S = load();
 function load() {
-  const d = { pin: null, allowTouch: false, timer: false, current: null, last: null, retry: [], history: [] };
+  const d = { name: 'TU', pin: null, allowTouch: false, timer: false, current: null, last: null, retry: [], history: [] };
   try { return Object.assign(d, JSON.parse(localStorage.getItem(KEY)) || {}); } catch (e) { return d; }
 }
 let saveTimer = 0;
@@ -256,6 +258,39 @@ function undo() {
   }
 }
 
+// ---------- 화면: 시작 (앱을 열 때마다) ----------
+function intro() {
+  setScreen('intro');
+  const n = kid(), h = new Date().getHours();
+  const greet = h < 5 ? `${n}, 아직 깜깜한 밤이에요 🌙`
+    : h < 11 ? `좋은 아침이에요, ${n}! ☀️`
+    : h < 17 ? `안녕, ${n}! 오늘도 반가워요 👋`
+    : h < 21 ? `오늘 하루도 수고했어요, ${n}! 🌇`
+    : `${n}, 조금만 하고 자요 🌙`;
+  const todayKey = new Date().toDateString();
+  const today = S.history.filter(x => new Date(x.date).toDateString() === todayKey).length;
+  const sub = today ? `오늘 벌써 ${today}장이나 풀었어요!` : '오늘도 같이 해 볼까요?';
+  const syms = ['+', '−', '×', '=', '1', '2', '3', '4', '5', '6', '7', '8', '9', '★'];
+  const colors = ['#e07b39', '#3a86c8', '#3aa66b', '#f5b301'];
+  const floaters = Array.from({ length: 18 }, (_, i) =>
+    `<span style="left:${rnd(2, 94)}%;top:${rnd(3, 90)}%;--d:-${(Math.random() * 6).toFixed(2)}s;--c:${colors[i % 4]};font-size:${rnd(28, 64)}px">${syms[rnd(0, syms.length - 1)]}</span>`).join('');
+  const letters = [...(S.name || 'TU')].map((ch, i) => `<span style="--i:${i}">${esc(ch)}</span>`).join('');
+  const len = [...(S.name || 'TU')].length;
+  app.innerHTML = `
+    <main class="intro">
+      <div class="floaters" aria-hidden="true">${floaters}</div>
+      <div class="badge" style="--fs:${len <= 2 ? .42 : len === 3 ? .32 : .22}">
+        <div class="letters">${letters}</div>
+        <i class="spark s1">★</i><i class="spark s2">★</i><i class="spark s3">✦</i>
+      </div>
+      <h1><b>${n}</b>만을 위한<br>연산 연습</h1>
+      <p class="greet">${greet}</p>
+      <p class="sub">${sub}</p>
+      <button class="btn primary big start" data-act="start">시작하기 ▶</button>
+    </main>`;
+  app.onclick = e => { if (e.target.closest('[data-act=start]')) home(); };
+}
+
 // ---------- 화면: 홈 ----------
 function home() {
   setScreen('home');
@@ -264,7 +299,7 @@ function home() {
   if (c && c.status === 'solving') banner = `<div class="banner">풀던 학습지가 있어요 · ${c.title}<button class="btn primary" data-act="resume">이어서 풀기</button></div>`;
   if (c && c.status === 'submitted') banner = `<div class="banner">채점을 기다리는 학습지가 있어요 · ${c.title}<button class="btn primary" data-act="grade">부모님 채점하기</button></div>`;
   app.innerHTML = `
-    <header class="bar"><div class="title">연산 연습</div><button class="icon-btn" data-act="parent" aria-label="부모님 메뉴">⚙️</button></header>
+    <header class="bar"><div class="title"><span class="kid">${kid()}</span>의 연산 연습</div><button class="icon-btn" data-act="parent" aria-label="부모님 메뉴">⚙️</button></header>
     <main class="home">
       ${banner}
       <div class="choices">
@@ -432,7 +467,8 @@ function result() {
   setScreen('result');
   const L = S.last, r = L.score / L.total, wrong = flat(L).filter((_, k) => L.marks[k] === 'x');
   const stars = r >= .9 ? 3 : r >= .7 ? 2 : 1;
-  const msg = r === 1 ? '모두 맞았어요! 최고예요 🎉' : r >= .8 ? '참 잘했어요! 👍' : '조금만 더 힘내요! 💪';
+  const n = kid();
+  const msg = r === 1 ? `모두 맞았어요! 최고예요, ${n} 🎉` : r >= .8 ? `참 잘했어요, ${n}! 👍` : `조금만 더 힘내요, ${n}! 💪`;
   app.innerHTML = `
     <header class="bar"><button class="icon-btn" data-act="home" aria-label="처음으로">🏠</button><div class="title">${L.title} 결과</div></header>
     <div class="result-top">
@@ -465,6 +501,8 @@ function parent() {
     <header class="bar"><button class="icon-btn" data-act="home" aria-label="처음으로">🏠</button><div class="title">부모님 메뉴</div></header>
     <main class="parent">
       <section><h3>설정</h3>
+        <label class="switch-row"><span>아이 이름<small>시작 화면과 홈에 나와요 (이니셜이나 별명 추천)</small></span>
+          <input type="text" id="name" class="name-input" maxlength="6" value="${kid()}"></label>
         <label class="switch-row"><span>손가락으로도 쓰기<small>끄면 S펜으로만 써져요 (손바닥이 닿아도 안 써짐)</small></span>
           <input type="checkbox" id="touch"${S.allowTouch ? ' checked' : ''}></label>
         <label class="switch-row"><span>풀이 시간 재기<small>다 푼 뒤 결과 화면과 기록에 걸린 시간이 나와요 (풀 때는 안 보여요)</small></span>
@@ -476,6 +514,7 @@ function parent() {
       </section>
       <section><h3>기록</h3>${rows ? `<table class="history">${rows}</table>` : '<p class="empty">아직 기록이 없어요.</p>'}</section>
     </main>`;
+  $('#name').onchange = e => { S.name = e.target.value.trim() || 'TU'; e.target.value = S.name; save(); };
   $('#touch').onchange = e => { S.allowTouch = e.target.checked; save(); };
   $('#timer').onchange = e => { S.timer = e.target.checked; save(); parent(); };
   app.onclick = async e => {
@@ -550,4 +589,4 @@ function modal(html, buttons, cls = '') {
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || ['localhost', '127.0.0.1'].includes(location.hostname))) {
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }
-home();
+intro();

@@ -12,7 +12,7 @@ const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const KEY = 'tumath.v1';
 const S = load();
 function load() {
-  const d = { pin: null, allowTouch: false, current: null, last: null, retry: [], history: [] };
+  const d = { pin: null, allowTouch: false, timer: false, current: null, last: null, retry: [], history: [] };
   try { return Object.assign(d, JSON.parse(localStorage.getItem(KEY)) || {}); } catch (e) { return d; }
 }
 let saveTimer = 0;
@@ -21,7 +21,29 @@ function save() {
   try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { console.warn('save failed', e); }
 }
 function saveSoon() { clearTimeout(saveTimer); saveTimer = setTimeout(save, 400); }
-document.addEventListener('visibilitychange', () => { if (document.hidden) save(); });
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { timerStop(); save(); }
+  else if (curScreen === 'sheet') timerStart();
+});
+
+// ---------- 풀이 시간 (학습지 화면이 보이는 동안만 잼) ----------
+let curScreen = '', tickStart = 0;
+function timerStart() {
+  if (!tickStart && S.current && S.current.status === 'solving' && !document.hidden) tickStart = Date.now();
+}
+function timerStop() {
+  if (!tickStart) return;
+  if (S.current) { S.current.elapsed = (S.current.elapsed || 0) + Date.now() - tickStart; saveSoon(); }
+  tickStart = 0;
+}
+function setScreen(name) {
+  curScreen = name;
+  if (name === 'sheet') timerStart(); else timerStop();
+}
+const fmtTime = ms => {
+  const s = Math.round(ms / 1000), m = Math.floor(s / 60);
+  return m ? `${m}분 ${s % 60}초` : `${s}초`;
+};
 
 // ---------- 문제 생성 ----------
 const rnd = (lo, hi) => lo + Math.floor(Math.random() * (hi - lo + 1));
@@ -236,6 +258,7 @@ function undo() {
 
 // ---------- 화면: 홈 ----------
 function home() {
+  setScreen('home');
   const c = S.current;
   let banner = '';
   if (c && c.status === 'solving') banner = `<div class="banner">풀던 학습지가 있어요 · ${c.title}<button class="btn primary" data-act="resume">이어서 풀기</button></div>`;
@@ -295,6 +318,7 @@ function sheet() {
       ${last ? '<button class="btn primary" data-act="submit">다 풀었어요!</button>' : '<button class="btn primary" data-act="next">다음 ▶</button>'}
     </footer>`;
   $$('.page .card').forEach(cd => { const k = cd.dataset.k; attachInk(cd, () => c.ink[k] || (c.ink[k] = []), true); });
+  setScreen('sheet');
   const main = $('main.page');
   new ResizeObserver(() => {
     if (!main.isConnected || !main.clientWidth || !main.clientHeight) return;   // 화면 전환으로 사라질 때는 무시
@@ -320,11 +344,13 @@ async function submit() {
       [{ label: '더 풀래요', value: false }, { label: '네, 다 풀었어요', value: true, primary: true }]);
     if (!ok) return;
   }
+  timerStop();
   c.status = 'submitted';
   save();
   submitted();
 }
 function submitted() {
+  setScreen('submitted');
   app.innerHTML = `<main class="center"><div class="big-emoji">👏</div><h2>다 풀었어요!</h2><p>부모님께 채점을 받아요.</p>
     <div class="row"><button class="btn big" data-act="home">나중에</button><button class="btn primary big" data-act="grade">부모님 채점하기</button></div></main>`;
   app.onclick = e => {
@@ -361,12 +387,14 @@ const paintMarks = marks => $$('.minis .card').forEach(cd => {
 
 // ---------- 화면: 채점 (부모) ----------
 function grade() {
+  setScreen('grade');
   const c = S.current, probs = flat(c);
   if (!c.marks) c.marks = probs.map((_, k) => hasInk(c, k) ? 'o' : 'x');
+  const time = S.timer && c.elapsed ? ` · ⏱ ${fmtTime(c.elapsed)}` : '';
   app.innerHTML = `
     <header class="bar">
       <button class="icon-btn" data-act="home" aria-label="처음으로">🏠</button>
-      <div class="title">채점하기<small>${c.title}</small></div>
+      <div class="title">채점하기<small>${c.title}${time}</small></div>
       <button class="btn primary" data-act="finish">채점 완료 · <span id="sc"></span></button>
     </header>
     <div class="grade-help">초록색이 정답이에요. 틀린 문제만 눌러서 <b>빗금</b>으로 바꿔 주세요. 빈칸은 미리 빗금으로 되어 있어요.</div>
@@ -390,9 +418,10 @@ function finish() {
     if (c.marks[k] === 'o') { score++; S.retry = S.retry.filter(r => keyOf(r) !== key); }
     else if (!S.retry.some(r => keyOf(r) === key)) S.retry.push({ op: p.op, a: p.a, b: p.b, fmt: p.fmt });
   });
-  S.history.unshift({ date: new Date().toISOString(), title: c.title, score, total: probs.length });
+  const elapsed = c.elapsed || 0;
+  S.history.unshift({ date: new Date().toISOString(), title: c.title, score, total: probs.length, elapsed });
   S.history.length = Math.min(S.history.length, 300);
-  S.last = { title: c.title, pages: c.pages, ink: c.ink, marks: c.marks, pageSize: c.pageSize, score, total: probs.length };
+  S.last = { title: c.title, pages: c.pages, ink: c.ink, marks: c.marks, pageSize: c.pageSize, score, total: probs.length, elapsed };
   S.current = null;
   save();
   result();
@@ -400,6 +429,7 @@ function finish() {
 
 // ---------- 화면: 결과 (아이) ----------
 function result() {
+  setScreen('result');
   const L = S.last, r = L.score / L.total, wrong = flat(L).filter((_, k) => L.marks[k] === 'x');
   const stars = r >= .9 ? 3 : r >= .7 ? 2 : 1;
   const msg = r === 1 ? '모두 맞았어요! 최고예요 🎉' : r >= .8 ? '참 잘했어요! 👍' : '조금만 더 힘내요! 💪';
@@ -408,6 +438,7 @@ function result() {
     <div class="result-top">
       <div class="stars">${'★'.repeat(stars)}<span class="off">${'★'.repeat(3 - stars)}</span></div>
       <div class="score">${L.score}<span>/ ${L.total}</span></div>
+      ${S.timer && L.elapsed ? `<div class="time">⏱ ${fmtTime(L.elapsed)}</div>` : ''}
       <div class="msg">${msg}</div>
       <div class="row">${wrong.length ? `<button class="btn primary big" data-act="again">틀린 ${wrong.length}문제 다시 풀기</button>` : ''}
         <button class="btn big" data-act="home">처음으로</button></div>
@@ -424,9 +455,11 @@ function result() {
 
 // ---------- 화면: 부모님 메뉴 ----------
 function parent() {
+  setScreen('parent');
   const rows = S.history.slice(0, 50).map(h => {
     const d = new Date(h.date).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-    return `<tr><td>${d}</td><td>${h.title}</td><td>${h.score} / ${h.total}</td></tr>`;
+    const t = S.timer ? `<td class="t">${h.elapsed ? fmtTime(h.elapsed) : ''}</td>` : '';
+    return `<tr><td>${d}</td><td>${h.title}</td>${t}<td>${h.score} / ${h.total}</td></tr>`;
   }).join('');
   app.innerHTML = `
     <header class="bar"><button class="icon-btn" data-act="home" aria-label="처음으로">🏠</button><div class="title">부모님 메뉴</div></header>
@@ -434,6 +467,8 @@ function parent() {
       <section><h3>설정</h3>
         <label class="switch-row"><span>손가락으로도 쓰기<small>끄면 S펜으로만 써져요 (손바닥이 닿아도 안 써짐)</small></span>
           <input type="checkbox" id="touch"${S.allowTouch ? ' checked' : ''}></label>
+        <label class="switch-row"><span>풀이 시간 재기<small>다 푼 뒤 결과 화면과 기록에 걸린 시간이 나와요 (풀 때는 안 보여요)</small></span>
+          <input type="checkbox" id="timer"${S.timer ? ' checked' : ''}></label>
         <div class="row" style="justify-content:flex-start">
           <button class="btn" data-act="pin">비밀번호 바꾸기</button>
           <button class="btn" data-act="clear"${S.retry.length ? '' : ' disabled'}>다시 풀기 목록 비우기 (${S.retry.length})</button>
@@ -442,6 +477,7 @@ function parent() {
       <section><h3>기록</h3>${rows ? `<table class="history">${rows}</table>` : '<p class="empty">아직 기록이 없어요.</p>'}</section>
     </main>`;
   $('#touch').onchange = e => { S.allowTouch = e.target.checked; save(); };
+  $('#timer').onchange = e => { S.timer = e.target.checked; save(); parent(); };
   app.onclick = async e => {
     const a = e.target.closest('[data-act]')?.dataset.act;
     if (a === 'home') home();
@@ -454,6 +490,7 @@ function parent() {
 
 // ---------- 비밀번호 ----------
 function pinPad({ title, sub, onCode, onCancel }) {
+  setScreen('pin');
   let code = '';
   app.innerHTML = `
     <header class="bar"><button class="icon-btn" data-act="cancel" aria-label="닫기">✕</button><div class="title"></div></header>

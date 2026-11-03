@@ -164,6 +164,8 @@ h2, h3, p { margin: 0; }
 .score { font-size: 3rem; font-weight: 900; }
 .score span { font-size: 1.6rem; color: var(--muted); margin-left: 6px; }
 .msg { font-size: 1.4rem; font-weight: 700; }
+.time { font-size: 1.5rem; font-weight: 800; color: var(--muted); }
+.history td.t { color: var(--muted); font-weight: 400; }
 
 /* ---------- 가운데 화면 (제출, 비밀번호) ---------- */
 .center { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; padding: 16px; text-align: center; }

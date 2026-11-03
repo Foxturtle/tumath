@@ -14,7 +14,7 @@ const kid = () => esc(S.name || 'TU');
 const KEY = 'tumath.v1';
 const S = load();
 function load() {
-  const d = { name: 'TU', pin: null, allowTouch: false, timer: false, current: null, last: null, retry: [], history: [] };
+  const d = { name: 'TU', pin: null, allowTouch: false, timer: false, rotate: false, current: null, last: null, retry: [], history: [] };
   try { return Object.assign(d, JSON.parse(localStorage.getItem(KEY)) || {}); } catch (e) { return d; }
 }
 let saveTimer = 0;
@@ -27,6 +27,13 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden) { timerStop(); save(); }
   else if (curScreen === 'sheet') timerStart();
 });
+
+// ---------- 화면 방향 (기본 세로 고정, 부모님 메뉴에서 회전 허용) ----------
+// 설치한 앱(전체 화면)에서만 동작하고, 브라우저 탭에서는 조용히 무시됨
+function applyOrientation() {
+  const o = screen.orientation;
+  if (o && o.lock) o.lock(S.rotate ? 'any' : 'portrait').catch(() => {});
+}
 
 // ---------- 풀이 시간 (학습지 화면이 보이는 동안만 잼) ----------
 let curScreen = '', tickStart = 0;
@@ -395,11 +402,13 @@ function sheet() {
   $$('.page .card').forEach(cd => { const k = cd.dataset.k; attachInk(cd, () => c.ink[k] || (c.ink[k] = []), true); });
   setScreen('sheet');
   const main = $('main.page');
-  new ResizeObserver(() => {
+  const recordSize = () => {
     if (!main.isConnected || !main.clientWidth || !main.clientHeight) return;   // 화면 전환으로 사라질 때는 무시
     c.pageSize = [main.clientWidth, main.clientHeight];
     saveSoon();
-  }).observe(main);
+  };
+  recordSize();   // 바로 한 번 기록 (채점 화면 축소 페이지 비율용)
+  new ResizeObserver(recordSize).observe(main);
   app.onclick = e => {
     const b = e.target.closest('[data-act]');
     if (!b) return;
@@ -444,9 +453,9 @@ function renderMinis(sess, withAnswer) {
   }).join('');
   $$('.card', box).forEach(cd => { const k = cd.dataset.k; attachInk(cd, () => sess.ink[k] || [], false); });
   const fit = () => {
-    const [pw, ph] = sess.pageSize && sess.pageSize[1] ? sess.pageSize : [1248, 620];
+    const [pw, ph] = sess.pageSize && sess.pageSize[1] ? sess.pageSize : [innerWidth - 32, innerHeight - 170];
     if (!box.clientWidth) return;
-    const cols = box.clientWidth > 900 ? 2 : 1, tw = (box.clientWidth - 32 - 16 * (cols - 1)) / cols, s = tw / pw;
+    const cols = box.clientWidth > 700 ? 2 : 1, tw = (box.clientWidth - 32 - 16 * (cols - 1)) / cols, s = tw / pw;
     $$('.mini', box).forEach(m => {
       m.style.width = `${tw}px`; m.style.height = `${ph * s}px`;
       Object.assign(m.firstElementChild.style, { width: `${pw}px`, height: `${ph}px`, transform: `scale(${s})` });
@@ -545,6 +554,8 @@ function parentMenu() {
           <input type="text" id="name" class="name-input" maxlength="6" value="${kid()}"></label>
         <label class="switch-row"><span>손가락으로도 쓰기<small>끄면 S펜으로만 써져요 (손바닥이 닿아도 안 써짐)</small></span>
           <input type="checkbox" id="touch"${S.allowTouch ? ' checked' : ''}></label>
+        <label class="switch-row"><span>화면 돌리기 허용<small>끄면 세로로 고정돼요 (홈 화면에 설치한 앱에서만 적용)</small></span>
+          <input type="checkbox" id="rotate"${S.rotate ? ' checked' : ''}></label>
         <label class="switch-row"><span>풀이 시간 재기<small>다 푼 뒤 결과 화면과 기록에 걸린 시간이 나와요 (풀 때는 안 보여요)</small></span>
           <input type="checkbox" id="timer"${S.timer ? ' checked' : ''}></label>
         <div class="row" style="justify-content:flex-start">
@@ -557,6 +568,7 @@ function parentMenu() {
   $('#name').oninput = e => { S.name = e.target.value.trim() || 'TU'; saveSoon(); };
   $('#name').onchange = e => { e.target.value = S.name; save(); };
   $('#touch').onchange = e => { S.allowTouch = e.target.checked; save(); };
+  $('#rotate').onchange = e => { S.rotate = e.target.checked; save(); applyOrientation(); };
   $('#timer').onchange = e => { S.timer = e.target.checked; save(); parentMenu(); };
   app.onclick = async e => {
     const a = e.target.closest('[data-act]')?.dataset.act;
@@ -630,4 +642,5 @@ function modal(html, buttons, cls = '') {
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || ['localhost', '127.0.0.1'].includes(location.hostname))) {
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }
+applyOrientation();
 intro();

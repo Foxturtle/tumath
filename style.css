@@ -101,7 +101,23 @@ h2, h3, p { margin: 0; }
 @keyframes pulse { 50% { transform: scale(1.06); } }
 @media (prefers-reduced-motion: reduce) { .intro *, .intro *::before { animation: none !important; } }
 .bar .title .kid { color: var(--accent); }
-.name-input { flex: none; width: 120px; font: inherit; font-size: 1.2rem; font-weight: 800; text-align: center; padding: 6px 10px; border: 2px solid var(--line); border-radius: 12px; color: var(--accent); }
+.name-btn { flex: none; color: var(--accent); font-size: 1.2rem; font-weight: 800; }
+.ver { text-align: center; color: var(--muted); font-size: .9rem; }
+.intro .credit {
+  position: absolute; left: 0; right: 0; bottom: max(14px, env(safe-area-inset-bottom));
+  font-size: .85rem; letter-spacing: .08em; color: #b9ae9f; animation: rise .6s 1.6s both;
+}
+.name-edit { justify-content: flex-start; padding-top: 24px; gap: 14px; overflow-y: auto; }
+.name-field {
+  width: min(320px, 90%); font: inherit; font-size: 2.6rem; font-weight: 900; text-align: center; letter-spacing: .08em;
+  color: var(--accent); background: var(--paper); border: 3px solid var(--line); border-radius: 18px; padding: 8px 12px;
+}
+.name-field:focus { outline: none; border-color: var(--accent); }
+.letter-pad { display: grid; grid-template-columns: repeat(7, minmax(0, 64px)); gap: 8px; width: 100%; justify-content: center; }
+.letter-pad button { height: 60px; border-radius: 14px; background: var(--paper); border: 2px solid var(--line); font-size: 1.5rem; font-weight: 800; }
+.letter-pad button:active { background: var(--accent-soft); }
+.letter-pad .wide { grid-column: span 2; }
+.pad-tabs .btn { min-width: 96px; }
 
 /* ---------- 홈 ---------- */
 .home { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 28px; padding: 16px; }

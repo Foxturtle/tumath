@@ -1,6 +1,7 @@
 'use strict';
 // 연산 연습 — 두 자리 덧셈/뺄셈, 구구단 손글씨 학습지 (부모 채점, 틀린 문제 다시 풀기)
 
+const VERSION = '2026.11.04-b';   // 부모님 메뉴에 표시 — 기기가 최신 버전인지 확인용
 const N = 10000;          // 획 좌표 정규화 단위 (카드 크기 대비)
 const LW = 4;             // 펜 굵기(px)
 const INK = '#1d3c8f';
@@ -323,6 +324,7 @@ function intro() {
       <p class="greet">${greet}</p>
       <p class="sub">${sub}</p>
       <button class="btn primary big start" data-act="start">시작하기 ▶</button>
+      <p class="credit">made by foxturtle</p>
     </main>`;
   app.onclick = e => { if (e.target.closest('[data-act=start]')) home(); };
 }
@@ -619,8 +621,8 @@ function parentMenu() {
     <header class="bar"><button class="icon-btn" data-act="home" aria-label="처음으로">🏠</button><div class="title">부모님 메뉴</div></header>
     <main class="parent">
       <section><h3>설정</h3>
-        <label class="switch-row"><span>아이 이름<small>시작 화면과 홈에 나와요 (이니셜이나 별명 추천)</small></span>
-          <input type="text" id="name" class="name-input" maxlength="6" value="${kid()}"></label>
+        <div class="switch-row"><span>아이 이름<small>시작 화면과 홈에 나와요 (이니셜이나 별명 추천)</small></span>
+          <button class="btn name-btn" data-act="name">${kid()} ✎</button></div>
         <label class="switch-row"><span>손가락으로도 쓰기<small>끄면 S펜으로만 써져요 (손바닥이 닿아도 안 써짐)</small></span>
           <input type="checkbox" id="touch"${S.allowTouch ? ' checked' : ''}></label>
         <label class="switch-row"><span>화면 돌리기 허용<small>끄면 세로로 고정돼요 (홈 화면에 설치한 앱에서만 적용)</small></span>
@@ -633,19 +635,100 @@ function parentMenu() {
         </div>
       </section>
       <section><h3>기록</h3>${rows ? `<table class="history">${rows}</table>` : '<p class="empty">아직 기록이 없어요.</p>'}</section>
+      <p class="ver">앱 버전 ${VERSION} · © 2026 foxturtle</p>
     </main>`;
-  $('#name').oninput = e => { S.name = e.target.value.trim() || 'TU'; saveSoon(); };
-  $('#name').onchange = e => { e.target.value = S.name; save(); };
   $('#touch').onchange = e => { S.allowTouch = e.target.checked; save(); };
   $('#rotate').onchange = e => { S.rotate = e.target.checked; save(); applyOrientation(); };
   $('#timer').onchange = e => { S.timer = e.target.checked; save(); parentMenu(); };
   app.onclick = async e => {
     const a = e.target.closest('[data-act]')?.dataset.act;
     if (a === 'home') home();
+    else if (a === 'name') nameEditor();
     else if (a === 'pin') setPin(parentMenu, parentMenu);
     else if (a === 'clear' && await modal('<p>다시 풀기 목록을 비울까요?</p>', [{ label: '취소', value: false }, { label: '비우기', value: true, primary: true }])) {
       S.retry = []; save(); parentMenu();
     }
+  };
+}
+
+// ---------- 한글 조합 (화면 글자판용, 두벌식 순서: 초성 → 중성 → 종성) ----------
+const CHO = [...'ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ'];
+const JUNG = [...'ㅏㅐㅑㅒㅓㅔㅕㅖㅗㅘㅙㅚㅛㅜㅝㅞㅟㅠㅡㅢㅣ'];
+const JONG = ['', ...'ㄱㄲㄳㄴㄵㄶㄷㄹㄺㄻㄼㄽㄾㄿㅀㅁㅂㅄㅅㅆㅇㅈㅊㅋㅌㅍㅎ'];
+const PAIR_V = { 'ㅗㅏ': 'ㅘ', 'ㅗㅐ': 'ㅙ', 'ㅗㅣ': 'ㅚ', 'ㅜㅓ': 'ㅝ', 'ㅜㅔ': 'ㅞ', 'ㅜㅣ': 'ㅟ', 'ㅡㅣ': 'ㅢ' };
+const PAIR_C = { 'ㄱㅅ': 'ㄳ', 'ㄴㅈ': 'ㄵ', 'ㄴㅎ': 'ㄶ', 'ㄹㄱ': 'ㄺ', 'ㄹㅁ': 'ㄻ', 'ㄹㅂ': 'ㄼ', 'ㄹㅅ': 'ㄽ', 'ㄹㅌ': 'ㄾ', 'ㄹㅍ': 'ㄿ', 'ㄹㅎ': 'ㅀ', 'ㅂㅅ': 'ㅄ' };
+const unpair = (pairs, v) => Object.keys(pairs).find(k => pairs[k] === v);   // 'ㄺ' → 'ㄹㄱ'
+const syllable = s => s.c && s.v
+  ? String.fromCharCode(0xAC00 + (CHO.indexOf(s.c) * 21 + JUNG.indexOf(s.v)) * 28 + JONG.indexOf(s.j || ''))
+  : (s.c || '') + (s.v || '');
+
+// st = { done: 완성된 글자, cur: 조합 중인 글자 {c, v, j} | null }
+function hangulKey(st, key) {
+  const cur = st.cur;
+  const commit = next => { if (cur) st.done += syllable(cur); st.cur = next; };
+  if (!JUNG.includes(key)) {                                   // 자음
+    if (!cur || !cur.c || !cur.v) return commit({ c: key });
+    if (!cur.j) { if (JONG.includes(key)) cur.j = key; else commit({ c: key }); return; }
+    if (PAIR_C[cur.j + key]) cur.j = PAIR_C[cur.j + key]; else commit({ c: key });
+    return;
+  }
+  if (!cur) return commit({ v: key });                         // 모음
+  if (cur.c && !cur.v) { cur.v = key; return; }
+  if (!cur.j) { if (PAIR_V[cur.v + key]) cur.v = PAIR_V[cur.v + key]; else commit({ v: key }); return; }
+  const sp = unpair(PAIR_C, cur.j);                            // 받침을 다음 글자 첫소리로 (예: 갈+ㅏ → 가라)
+  const moved = sp ? sp[1] : cur.j;
+  cur.j = sp ? sp[0] : '';
+  commit({ c: moved, v: key });
+}
+function hangulBack(st) {
+  const cur = st.cur;
+  if (!cur) { st.done = [...st.done].slice(0, -1).join(''); return; }
+  if (cur.j) { const sp = unpair(PAIR_C, cur.j); cur.j = sp ? sp[0] : ''; }
+  else if (cur.v) { const sp = unpair(PAIR_V, cur.v); cur.v = sp ? sp[0] : ''; if (!cur.v && !cur.c) st.cur = null; }
+  else st.cur = null;
+}
+
+// 이름 바꾸기: 기기 키보드가 안 떠도 되도록 화면 글자판(한글/ABC)을 함께 둠
+function nameEditor() {
+  setScreen('name');
+  const MAX = 6, KO = [...'ㄱㄴㄷㄹㅁㅂㅅㅇㅈㅊㅋㅌㅍㅎㄲㄸㅃㅆㅉㅏㅑㅓㅕㅗㅛㅜㅠㅡㅣㅐㅒㅔㅖ'], EN = [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'];
+  let st = { done: S.name || 'TU', cur: null }, mode = /[가-힣]/.test(S.name) ? 'ko' : 'en';
+  const text = () => st.done + (st.cur ? syllable(st.cur) : '');
+  app.innerHTML = `
+    <header class="bar">
+      <button class="icon-btn" data-act="back" aria-label="취소">✕</button>
+      <div class="title">아이 이름</div>
+      <button class="btn primary" data-act="ok">완료</button>
+    </header>
+    <main class="center name-edit">
+      <input type="text" id="nm" class="name-field" maxlength="${MAX}" autocomplete="off" spellcheck="false">
+      <p>아래 글자판을 누르거나, 칸을 눌러 키보드로 입력해요 (${MAX}글자까지)</p>
+      <div class="row pad-tabs"><button class="btn" data-mode="ko">한글</button><button class="btn" data-mode="en">ABC</button></div>
+      <div class="letter-pad"></div>
+    </main>`;
+  const f = $('#nm'), pad = $('.letter-pad');
+  const paint = () => {
+    f.value = text();
+    $$('[data-mode]').forEach(b => b.classList.toggle('primary', b.dataset.mode === mode));
+    pad.innerHTML = (mode === 'ko' ? KO : EN).map(k => `<button data-k="${k}">${k}</button>`).join('')
+      + '<button class="wide" data-act="del" aria-label="한 글자 지우기">⌫</button>';
+  };
+  paint();
+  f.oninput = () => { st = { done: f.value, cur: null }; };   // 기기 키보드로 직접 쓴 경우
+  app.onclick = e => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    if (b.dataset.k) {
+      const before = JSON.stringify(st);
+      if (mode === 'ko') hangulKey(st, b.dataset.k);
+      else { st.done = text() + b.dataset.k; st.cur = null; }
+      if ([...text()].length > MAX) st = JSON.parse(before);
+      f.value = text();
+    } else if (b.dataset.mode) {
+      st = { done: text(), cur: null }; mode = b.dataset.mode; paint();
+    } else if (b.dataset.act === 'del') { hangulBack(st); f.value = text(); }
+    else if (b.dataset.act === 'ok') { S.name = text().trim() || 'TU'; save(); parentMenu(); }
+    else if (b.dataset.act === 'back') parentMenu();
   };
 }
 

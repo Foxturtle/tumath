@@ -1,7 +1,7 @@
 'use strict';
 // 연산 연습 — 두 자리 덧셈/뺄셈, 구구단 손글씨 학습지 (부모 채점, 틀린 문제 다시 풀기)
 
-const VERSION = '2026.11.04-b';   // 부모님 메뉴에 표시 — 기기가 최신 버전인지 확인용
+const VERSION = '2026.11.04-c';   // 부모님 메뉴에 표시 — 기기가 최신 버전인지 확인용
 const N = 10000;          // 획 좌표 정규화 단위 (카드 크기 대비)
 const LW = 4;             // 펜 굵기(px)
 const INK = '#1d3c8f';
@@ -89,33 +89,45 @@ function subProblem(kind) {
     if ((kind === 'borrow') === borrow) return [a, b];
   }
 }
-function makeArith(op) {
+const chunk = (a, n) => Array.from({ length: Math.ceil(a.length / n) }, (_, i) => a.slice(i * n, (i + 1) * n));
+
+// n문제 (10의 배수). 세로셈 n/2 + 가로셈 n/2, 유형은 RATIO를 10문제 묶음 단위로 섞어 비율 유지. 같은 문제 없음
+function makeArith(op, n = 20) {
   const gen = op === '+' ? addProblem : subProblem, seen = new Set();
-  const pick = fmt => shuffle(Object.entries(RATIO[op][fmt]).flatMap(([k, n]) => Array(n).fill(k))).map(k => {
-    let p;
-    do { p = gen(k); } while (seen.has(p.join()));
-    seen.add(p.join());
-    return { op, a: p[0], b: p[1], fmt };
-  });
-  const v = pick('v'), h = pick('h');
+  const pick = (fmt, count) => {
+    const kinds = [];
+    while (kinds.length < count) kinds.push(...shuffle(Object.entries(RATIO[op][fmt]).flatMap(([k, m]) => Array(m).fill(k))));
+    return kinds.slice(0, count).map(k => {
+      let p;
+      do { p = gen(k); } while (seen.has(p.join()));
+      seen.add(p.join());
+      return { op, a: p[0], b: p[1], fmt };
+    });
+  };
+  const v = pick('v', n / 2), h = pick('h', n / 2);
   // 한 화면 = 학습지 한 줄 (세로셈 2 + 가로셈 2)
-  return [0, 1, 2, 3, 4].map(r => [v[2 * r], v[2 * r + 1], h[2 * r], h[2 * r + 1]]);
+  return Array.from({ length: Math.ceil(n / 4) }, (_, r) => [v[2 * r], v[2 * r + 1], h[2 * r], h[2 * r + 1]].filter(Boolean));
 }
-function makeMul(dan) {
-  const nums = () => shuffle([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
-  const L = nums();
-  let R;
-  do { R = nums(); } while (R.join() === L.join());
-  const row = i => [{ op: '×', a: dan, b: L[i], fmt: 'h' }, { op: '×', a: dan, b: R[i], fmt: 'h' }];
-  return [0, 1].map(pg => [0, 1, 2, 3, 4].flatMap(r => row(pg * 5 + r)));
+// 고른 단들로 n문제, 한 화면 10문제. 단과 곱하는 수의 모든 조합(단 수 × 10)을 한 바퀴로 보고,
+// 바퀴마다 단별로 고르게 나눠 겹치지 않게 뽑음 (한 단만 고르면 바퀴 = 1~10을 섞은 것)
+function makeMulMixed(dans, n = 20) {
+  const out = [];
+  while (out.length < n) {
+    const r = Math.min(n - out.length, dans.length * 10);
+    const counts = dans.map(() => Math.floor(r / dans.length));
+    shuffle([...dans.keys()]).slice(0, r % dans.length).forEach(i => counts[i]++);
+    out.push(...shuffle(dans.flatMap((d, i) =>
+      shuffle([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]).slice(0, counts[i]).map(b => ({ op: '×', a: d, b, fmt: 'h' })))));
+  }
+  return chunk(out, 10);
 }
-// 고른 단들을 섞어 20문제. 단마다 고르게 나누고(남는 문제는 무작위 단에), 같은 단 안에서는 곱하는 수가 겹치지 않음
-function makeMulMixed(dans) {
-  const counts = dans.map(() => Math.floor(20 / dans.length));
-  shuffle([...dans.keys()]).slice(0, 20 % dans.length).forEach(i => counts[i]++);
-  const out = shuffle(dans.flatMap((d, i) =>
-    shuffle([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]).slice(0, counts[i]).map(b => ({ op: '×', a: d, b, fmt: 'h' }))));
-  return [out.slice(0, 10), out.slice(10)];
+// 섞어 풀기/한 종류 공통: counts = {'+': n, '-': n, '×': n}, 덧셈 → 뺄셈 → 곱셈 순서
+function makeSheet(counts, dans) {
+  return [
+    ...(counts['+'] ? makeArith('+', counts['+']) : []),
+    ...(counts['-'] ? makeArith('-', counts['-']) : []),
+    ...(counts['×'] ? makeMulMixed(dans, counts['×']) : []),
+  ];
 }
 function paginate(probs) {
   const arith = probs.filter(p => p.op !== '×'), mul = probs.filter(p => p.op === '×'), pages = [];
@@ -190,7 +202,8 @@ function cardGeo(card) {
 }
 
 // 카드 위에 손글씨 캔버스 연결. list()는 이 카드의 획 배열을 돌려줌.
-function attachInk(card, list, interactive) {
+// res(): 캔버스 해상도 배율 (기본은 화면 배율, 축소 페이지는 축소 비율만큼 낮춰 메모리 절약)
+function attachInk(card, list, interactive, res) {
   const k = +card.dataset.k, cv = $('canvas', card), ctx = cv.getContext('2d');
   let w = 0, h = 0, dpr = 1, cur = null;
   const pen = () => { ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.strokeStyle = INK; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; };
@@ -202,7 +215,7 @@ function attachInk(card, list, interactive) {
   };
   card.redraw = redraw;
   new ResizeObserver(() => {
-    w = card.clientWidth; h = card.clientHeight; dpr = window.devicePixelRatio || 1;
+    w = card.clientWidth; h = card.clientHeight; dpr = res ? res() : window.devicePixelRatio || 1;
     cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
     redraw();
   }).observe(card);
@@ -344,50 +357,85 @@ function home() {
         <button class="choice add" data-act="add"><b>+</b><span>덧셈</span><small>두 자리 수</small></button>
         <button class="choice sub" data-act="sub"><b>−</b><span>뺄셈</span><small>두 자리 수</small></button>
         <button class="choice mul" data-act="mul"><b>×</b><span>곱셈</span><small>구구단</small></button>
+        <button class="choice mix" data-act="mix"><b><i>±×</i></b><span>섞어 풀기</span><small>한 번에</small></button>
       </div>
       ${S.retry.length ? `<button class="retry-btn" data-act="retry">틀린 문제 다시 풀기 <span class="count">${S.retry.length}</span></button>` : ''}
     </main>`;
   app.onclick = e => {
     const a = e.target.closest('[data-act]')?.dataset.act;
-    if (a === 'add') begin('두 자리 수 덧셈', makeArith('+'));
-    else if (a === 'sub') begin('두 자리 수 뺄셈', makeArith('-'));
-    else if (a === 'mul') chooseMul();
-    else if (a === 'retry') begin('틀린 문제 다시 풀기', paginate(S.retry.slice(0, 20).map(p => ({ ...p }))));
+    if (a === 'add' || a === 'sub' || a === 'mul' || a === 'mix') setupDialog(a);
+    else if (a === 'retry') begin('틀린 문제 다시 풀기', paginate(S.retry.slice(0, 200).map(p => ({ ...p }))));
     else if (a === 'resume') sheet();
     else if (a === 'grade') requirePin(grade, home);
     else if (a === 'parent') requirePin(parentMenu, home);
   };
 }
-// 단 고르기: 하나면 그 단만, 여러 개면 섞어서. 지난번 고른 단을 기억함
-function chooseMul() {
-  const ALL = [2, 3, 4, 5, 6, 7, 8, 9], sel = new Set(S.mulDans || []), m = $('#modal');
-  m.innerHTML = `<div class="dlg"><h3>몇 단을 할까요?</h3><p class="hint">여러 개를 고르면 섞어서 나와요</p>
-    <div class="dan-grid">${ALL.map(d => `<button class="btn dan" data-d="${d}">${d}단</button>`).join('')}</div>
-    <div class="row"><button class="btn" data-act="all"></button></div>
+// 시작 전 설정: 문제 수(10~200, 10 단위)와 곱셈 단. 섞어 풀기는 종류마다 0~200, 합계 200까지.
+// 마지막 설정을 기억함 (S.setup, 단은 S.mulDans)
+const MAXQ = 200;
+const KIND_OPS = { add: ['+'], sub: ['-'], mul: ['×'], mix: ['+', '-', '×'] };
+const OP_LABEL = { '+': '덧셈', '-': '뺄셈', '×': '곱셈' };
+function setupDialog(kind) {
+  const ALL = [2, 3, 4, 5, 6, 7, 8, 9], ops = KIND_OPS[kind], mix = kind === 'mix', m = $('#modal');
+  S.setup = S.setup || {};
+  const counts = mix ? { '+': 20, '-': 20, '×': 0, ...S.setup.mix } : { [ops[0]]: S.setup[kind] || 20 };
+  const sel = new Set(S.mulDans || []), min = mix ? 0 : 10;
+  const total = () => ops.reduce((n, op) => n + counts[op], 0);
+  m.innerHTML = `<div class="dlg setup">
+    <h3>${mix ? '섞어 풀기' : `${OP_LABEL[ops[0]]} 몇 문제 풀까요?`}</h3>
+    ${ops.map(op => `<div class="count-row" data-op="${op}">
+      ${mix ? `<span class="lbl">${OP_LABEL[op]}</span>` : ''}
+      <button class="btn step" data-step="-10" aria-label="10문제 빼기">−</button>
+      <b class="cnt"></b>
+      <button class="btn step" data-step="10" aria-label="10문제 더하기">+</button></div>`).join('')}
+    ${mix ? '' : `<div class="row quick">${[10, 20, 50, 100, 200].map(n => `<button class="btn" data-quick="${n}">${n}</button>`).join('')}</div>`}
+    ${ops.includes('×') ? `<div class="dan-box"><p class="hint">곱셈 단 (여러 개 고르면 섞여요)</p>
+      <div class="dan-grid">${ALL.map(d => `<button class="btn dan" data-d="${d}">${d}단</button>`).join('')}</div>
+      <div class="row"><button class="btn" data-act="all"></button></div></div>` : ''}
+    <p class="hint total"></p>
     <div class="row"><button class="btn" data-act="cancel">취소</button><button class="btn primary" data-act="go"></button></div></div>`;
   const paint = () => {
+    const n = total(), needDan = counts['×'] > 0;
+    ops.forEach(op => {
+      const row = $(`.count-row[data-op="${op}"]`, m);
+      $('.cnt', row).textContent = `${counts[op]}문제`;
+      $('[data-step="-10"]', row).disabled = counts[op] <= min;
+      $('[data-step="10"]', row).disabled = counts[op] >= MAXQ || n >= MAXQ;
+    });
+    $$('[data-quick]', m).forEach(b => b.classList.toggle('primary', +b.dataset.quick === n));
     $$('.dan', m).forEach(b => b.classList.toggle('on', sel.has(+b.dataset.d)));
-    const go = $('[data-act=go]', m), n = sel.size;
-    go.disabled = !n;
-    go.textContent = !n ? '단을 골라 주세요' : n === 1 ? `${[...sel][0]}단 시작` : `${n}개 단 섞어서 시작`;
-    $('[data-act=all]', m).textContent = n === ALL.length ? '모두 빼기' : '모두 고르기';
+    const box = $('.dan-box', m);
+    if (box) box.classList.toggle('off', !needDan);
+    const all = $('[data-act=all]', m);
+    if (all) all.textContent = sel.size === ALL.length ? '모두 빼기' : '모두 고르기';
+    $('.total', m).textContent = mix ? `모두 ${n}문제 (덧셈 → 뺄셈 → 곱셈 순서, ${MAXQ}문제까지)` : `${MAXQ}문제까지 고를 수 있어요`;
+    const go = $('[data-act=go]', m);
+    go.disabled = !n || (needDan && !sel.size);
+    go.textContent = !n ? '문제 수를 골라 주세요' : needDan && !sel.size ? '단을 골라 주세요' : `${n}문제 시작`;
   };
   paint();
   m.hidden = false;
   m.onclick = e => {
     const b = e.target.closest('button');
-    if (!b) return;
+    if (!b || b.disabled) return;
     const a = b.dataset.act;
-    if (b.dataset.d) { const d = +b.dataset.d; sel.has(d) ? sel.delete(d) : sel.add(d); paint(); }
+    if (b.dataset.step) {
+      const op = b.closest('.count-row').dataset.op;
+      counts[op] = Math.max(min, Math.min(MAXQ, counts[op] + +b.dataset.step));
+      paint();
+    } else if (b.dataset.quick) { counts[ops[0]] = +b.dataset.quick; paint(); }
+    else if (b.dataset.d) { const d = +b.dataset.d; sel.has(d) ? sel.delete(d) : sel.add(d); paint(); }
     else if (a === 'all') { if (sel.size === ALL.length) sel.clear(); else ALL.forEach(d => sel.add(d)); paint(); }
     else if (a === 'cancel') m.hidden = true;
-    else if (a === 'go' && sel.size) {
+    else if (a === 'go') {
       m.hidden = true;
       const dans = [...sel].sort((x, y) => x - y);
-      S.mulDans = dans;
+      if (mix) S.setup.mix = { ...counts }; else S.setup[kind] = counts[ops[0]];
+      if (counts['×']) S.mulDans = dans;
       save();
-      if (dans.length === 1) begin(`${dans[0]}단`, makeMul(dans[0]));
-      else begin(dans.length === ALL.length ? '구구단 섞어서' : `${dans.join('·')}단 섞어서`, makeMulMixed(dans));
+      const mulTitle = dans.length === 1 ? `${dans[0]}단` : dans.length === ALL.length ? '구구단 섞어서' : `${dans.join('·')}단 섞어서`;
+      const title = mix ? '섞어 풀기' : kind === 'add' ? '두 자리 수 덧셈' : kind === 'sub' ? '두 자리 수 뺄셈' : mulTitle;
+      begin(title, makeSheet(counts, dans));
     }
   };
 }
@@ -395,10 +443,12 @@ function chooseMul() {
 // ---------- 화면: 학습지 ----------
 function sheet() {
   const c = S.current, pg = c.pages[c.page], off = offset(c, c.page), last = c.page === c.pages.length - 1;
-  const dots = c.pages.map((p, i) => {
+  // 10쪽까지는 점, 그보다 많으면 "몇 / 몇쪽"과 진행 막대
+  const dots = c.pages.length <= 10 ? c.pages.map((p, i) => {
     const cls = i === c.page ? 'on' : p.some((_, j) => hasInk(c, offset(c, i) + j)) ? 'done' : '';
     return `<button data-act="go" data-p="${i}" aria-label="${i + 1}쪽"><i class="${cls}"></i></button>`;
-  }).join('');
+  }).join('') : `<span class="pg"><b>${c.page + 1}</b> / ${c.pages.length}쪽
+      <i class="bar-track"><i class="bar-fill" style="width:${(c.page + 1) / c.pages.length * 100}%"></i></i></span>`;
   app.innerHTML = `
     <header class="bar">
       <button class="icon-btn" data-act="home" aria-label="처음으로">🏠</button>
@@ -469,17 +519,20 @@ function renderMinis(sess, withAnswer) {
     const off = offset(sess, i);
     return `<div class="mini"><div class="page ${layoutOf(pg)}">${pg.map((p, j) => cardHTML(p, off + j, withAnswer)).join('')}</div></div>`;
   }).join('');
-  $$('.card', box).forEach(cd => { const k = cd.dataset.k; attachInk(cd, () => sess.ink[k] || [], false); });
+  let scale = .5;
   const fit = () => {
     const [pw, ph] = sess.pageSize && sess.pageSize[1] ? sess.pageSize : [innerWidth - 32, innerHeight - 170];
     if (!box.clientWidth) return;
     const cols = box.clientWidth > 700 ? 2 : 1, tw = (box.clientWidth - 32 - 16 * (cols - 1)) / cols, s = tw / pw;
+    scale = s;
     $$('.mini', box).forEach(m => {
       m.style.width = `${tw}px`; m.style.height = `${ph * s}px`;
       Object.assign(m.firstElementChild.style, { width: `${pw}px`, height: `${ph}px`, transform: `scale(${s})` });
     });
   };
   fit();
+  const res = () => Math.max(.5, scale * Math.min(window.devicePixelRatio || 1, 2));
+  $$('.card', box).forEach(cd => { const k = cd.dataset.k; attachInk(cd, () => sess.ink[k] || [], false, res); });
   new ResizeObserver(fit).observe(box);
 }
 const paintMarks = marks => $$('.minis .card').forEach(cd => {
@@ -490,13 +543,17 @@ const paintMarks = marks => $$('.minis .card').forEach(cd => {
 // ---------- 글씨 읽기 (자동 채점) ----------
 const UNSURE = .7;   // 숫자 하나라도 이보다 자신 없으면 부모님 확인 표시
 
-async function recognize(c) {
+async function recognize(c, onProgress) {
   await Digits.load();
-  const reco = {};
-  flat(c).forEach((p, k) => {
-    const strokes = c.ink[k] || [], g = c.geo && c.geo[k];
-    if (!strokes.length) { reco[k] = { text: '', conf: 1 }; return; }
-    if (!g || !g.boxes.length) { reco[k] = null; return; }          // 칸 위치 기록이 없는 옛 학습지
+  const reco = {}, probs = flat(c);
+  for (let k = 0; k < probs.length; k++) {
+    if (k && k % 20 === 0) {                                       // 문제가 많을 때 화면이 멈추지 않게 잠깐씩 쉼
+      if (onProgress) onProgress(k, probs.length);
+      await new Promise(r => setTimeout(r));
+    }
+    const p = probs[k], strokes = c.ink[k] || [], g = c.geo && c.geo[k];
+    if (!strokes.length) { reco[k] = { text: '', conf: 1 }; continue; }
+    if (!g || !g.boxes.length) { reco[k] = null; continue; }        // 칸 위치 기록이 없는 옛 학습지
     const px = strokes.map(s => s.pts.map((v, i) => v * (i % 2 ? g.h : g.w) / N));
     const bx = g.boxes.map(b => b.map((v, i) => v * (i % 2 ? g.h : g.w) / N));
     const bw = bx[0][2] - bx[0][0], bh = bx[0][3] - bx[0][1], last = bx[bx.length - 1];
@@ -506,7 +563,7 @@ async function recognize(c) {
       : { x0: bx[0][0] - bw * .5, x1: g.w, y0: bx[0][1] - bh * .4, y1: bx[0][3] + bh * .4 };
     const r = Digits.read(px, region);
     reco[k] = { text: r.text, conf: +r.conf.toFixed(3) };
-  });
+  }
   return reco;
 }
 const recoOk = (p, r) => !!r && r.text === String(answer(p));
@@ -536,7 +593,7 @@ function grade() {
   };
   if (c.marks) ready();
   else {
-    recognize(c).then(reco => {
+    recognize(c, (k, n) => { if (curScreen === 'grade') $('#sc').textContent = `글씨 읽는 중… ${k}/${n}`; }).then(reco => {
       c.reco = reco;
       c.marks = probs.map((p, k) => reco[k] === null ? 'o' : recoOk(p, reco[k]) ? 'o' : 'x');
     }).catch(err => {

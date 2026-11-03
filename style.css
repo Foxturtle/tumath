@@ -245,6 +245,12 @@ h2, h3, p { margin: 0; }
 }
 .card.h .answer-tag { top: 4%; bottom: auto; }
 .grade-help { padding: 0 16px 6px; color: var(--muted); font-size: 1.05rem; }
+.filters { justify-content: flex-start; padding: 2px 16px 8px; gap: 8px; }
+.filters[hidden] { display: none; }
+.filters .btn { padding: .45em .9em; font-size: 1.05rem; }
+.filters .btn span { opacity: .7; margin-left: 2px; }
+.card.dim { opacity: .28; }
+.filter-empty { text-align: center; font-size: 1.4rem; font-weight: 700; color: var(--muted); padding: 48px 16px; }
 .grade-help b { border-radius: 6px; padding: 0 .3em; }
 .grade-help b.u { color: #8a6a00; background: #fff1b8; }
 .grade-help b.r { color: #44515e; background: #eef1f4; }

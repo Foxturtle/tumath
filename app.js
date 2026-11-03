@@ -1,7 +1,7 @@
 'use strict';
 // 연산 연습 — 두 자리 덧셈/뺄셈, 구구단 손글씨 학습지 (부모 채점, 틀린 문제 다시 풀기)
 
-const VERSION = '2026.11.04-c';   // 부모님 메뉴에 표시 — 기기가 최신 버전인지 확인용
+const VERSION = '2026.11.04-d';   // 부모님 메뉴에 표시 — 기기가 최신 버전인지 확인용
 const N = 10000;          // 획 좌표 정규화 단위 (카드 크기 대비)
 const LW = 4;             // 펜 굵기(px)
 const INK = '#1d3c8f';
@@ -213,12 +213,14 @@ function attachInk(card, list, interactive, res) {
     pen();
     list().forEach(s => drawStroke(ctx, s, w, h));
   };
-  card.redraw = redraw;
-  new ResizeObserver(() => {
+  const resize = () => {
     w = card.clientWidth; h = card.clientHeight; dpr = res ? res() : window.devicePixelRatio || 1;
     cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
     redraw();
-  }).observe(card);
+  };
+  card.redraw = redraw;
+  card.resize = resize;
+  new ResizeObserver(resize).observe(card);
   if (!interactive) return;
 
   const pt = ev => {
@@ -532,7 +534,18 @@ function renderMinis(sess, withAnswer) {
   };
   fit();
   const res = () => Math.max(.5, scale * Math.min(window.devicePixelRatio || 1, 2));
-  $$('.card', box).forEach(cd => { const k = cd.dataset.k; attachInk(cd, () => sess.ink[k] || [], false, res); });
+  // 보이는 쪽(과 위아래 가까운 쪽)만 손글씨를 그리고, 멀어진 쪽은 캔버스를 비워 메모리를 돌려줌
+  const io = new IntersectionObserver(entries => entries.forEach(en => $$('.card', en.target).forEach(cd => {
+    if (en.isIntersecting) {
+      if (cd.resize) cd.resize();
+      else attachInk(cd, () => sess.ink[cd.dataset.k] || [], false, res);
+    } else if (cd.resize) {
+      const cv = $('canvas', cd);
+      cv.width = cv.height = 0;
+    }
+  })), { root: box, rootMargin: '1000px 0px' });
+  $$('canvas', box).forEach(cv => { cv.width = cv.height = 0; });   // 그리기 전에는 빈 캔버스 (기본 300x150도 아낌)
+  $$('.mini', box).forEach(mn => io.observe(mn));
   new ResizeObserver(fit).observe(box);
 }
 const paintMarks = marks => $$('.minis .card').forEach(cd => {
@@ -582,13 +595,46 @@ function grade() {
     </header>
     <div class="grade-help">글씨를 읽어서 자동으로 채점했어요. <b class="r">✎</b>는 글씨에서 읽은 답, <b class="g">초록</b>은 정답이에요.
       <b class="u">노란 칸</b>은 글씨가 애매한 문제예요. 잘못 채점된 문제는 눌러서 바꿔 주세요.</div>
-    <div class="minis grading"></div>`;
+    <div class="row filters" hidden>
+      <button class="btn" data-f="all">전체 <span></span></button>
+      <button class="btn" data-f="x">틀린 것 <span></span></button>
+      <button class="btn" data-f="u">노란 칸 <span></span></button>
+    </div>
+    <div class="minis grading"></div>
+    <p class="filter-empty" hidden></p>`;
   renderMinis(c, true);
-  const refresh = () => { paintMarks(c.marks); $('#sc').textContent = `${c.marks.filter(m => m === 'o').length} / ${probs.length}`; };
+  // 보기 필터: 해당 문제가 없는 쪽은 숨기고, 있는 쪽에서는 나머지 문제를 흐리게.
+  // 표시를 바꿔도 바로 사라지지 않도록, 필터는 버튼을 누를 때만 다시 적용함
+  let filter = 'all';
+  const isUnsure = k => !!c.reco && recoUnsure(c.reco[k]);
+  const match = k => filter === 'all' || (filter === 'x' ? c.marks[k] === 'x' : isUnsure(k));
+  const applyFilter = () => {
+    let shown = 0;
+    $$('.minis .mini').forEach(mn => {
+      const cards = $$('.card', mn);
+      cards.forEach(cd => cd.classList.toggle('dim', filter !== 'all' && !match(+cd.dataset.k)));
+      const any = cards.some(cd => match(+cd.dataset.k));
+      mn.hidden = !any;
+      if (any) shown++;
+    });
+    const empty = $('.filter-empty');
+    empty.hidden = !!shown;
+    empty.textContent = filter === 'x' ? '틀린 문제가 없어요 🎉' : '애매한 문제가 없어요 👍';
+    $$('[data-f]').forEach(b => b.classList.toggle('primary', b.dataset.f === filter));
+  };
+  const refresh = () => {
+    paintMarks(c.marks);
+    $('#sc').textContent = `${c.marks.filter(m => m === 'o').length} / ${probs.length}`;
+    $('[data-f=all] span').textContent = probs.length;
+    $('[data-f=x] span').textContent = c.marks.filter(m => m === 'x').length;
+    $('[data-f=u] span').textContent = probs.filter((_, k) => isUnsure(k)).length;
+  };
   const ready = () => {
     if (curScreen !== 'grade') return;
     paintReco(c);
     refresh();
+    $('.filters').hidden = false;
+    applyFilter();
     $('[data-act=finish]').disabled = false;
   };
   if (c.marks) ready();
@@ -604,6 +650,8 @@ function grade() {
   app.onclick = e => {
     const card = e.target.closest('.minis .card');
     if (card && c.marks) { const k = +card.dataset.k; c.marks[k] = c.marks[k] === 'o' ? 'x' : 'o'; refresh(); saveSoon(); return; }
+    const f = e.target.closest('[data-f]');
+    if (f) { filter = f.dataset.f; applyFilter(); $('.minis').scrollTop = 0; return; }
     const a = e.target.closest('[data-act]')?.dataset.act;
     if (a === 'home') { save(); home(); }
     else if (a === 'finish' && c.marks) finish();

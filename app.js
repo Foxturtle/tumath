@@ -1,7 +1,7 @@
 'use strict';
 // 연산 연습 — 두 자리 덧셈/뺄셈, 구구단 손글씨 학습지 (부모 채점, 틀린 문제 다시 풀기)
 
-const VERSION = '2026.11.04-d';   // 부모님 메뉴에 표시 — 기기가 최신 버전인지 확인용
+const VERSION = '2026.11.04-e';   // 부모님 메뉴에 표시 — 기기가 최신 버전인지 확인용
 const N = 10000;          // 획 좌표 정규화 단위 (카드 크기 대비)
 const LW = 4;             // 펜 굵기(px)
 const INK = '#1d3c8f';
@@ -605,22 +605,24 @@ function grade() {
   renderMinis(c, true);
   // 보기 필터: 해당 문제가 없는 쪽은 숨기고, 있는 쪽에서는 나머지 문제를 흐리게.
   // 표시를 바꿔도 바로 사라지지 않도록, 필터는 버튼을 누를 때만 다시 적용함
-  let filter = 'all';
+  // 틀린 것(x)과 노란 칸(u)은 함께 켤 수 있음. 아무것도 안 켜면 전체
+  const filters = new Set();
   const isUnsure = k => !!c.reco && recoUnsure(c.reco[k]);
-  const match = k => filter === 'all' || (filter === 'x' ? c.marks[k] === 'x' : isUnsure(k));
+  const match = k => !filters.size || (filters.has('x') && c.marks[k] === 'x') || (filters.has('u') && isUnsure(k));
   const applyFilter = () => {
     let shown = 0;
     $$('.minis .mini').forEach(mn => {
       const cards = $$('.card', mn);
-      cards.forEach(cd => cd.classList.toggle('dim', filter !== 'all' && !match(+cd.dataset.k)));
+      cards.forEach(cd => cd.classList.toggle('dim', !match(+cd.dataset.k)));
       const any = cards.some(cd => match(+cd.dataset.k));
       mn.hidden = !any;
       if (any) shown++;
     });
     const empty = $('.filter-empty');
     empty.hidden = !!shown;
-    empty.textContent = filter === 'x' ? '틀린 문제가 없어요 🎉' : '애매한 문제가 없어요 👍';
-    $$('[data-f]').forEach(b => b.classList.toggle('primary', b.dataset.f === filter));
+    empty.textContent = filters.size === 2 ? '틀리거나 애매한 문제가 없어요 🎉'
+      : filters.has('x') ? '틀린 문제가 없어요 🎉' : '애매한 문제가 없어요 👍';
+    $$('[data-f]').forEach(b => b.classList.toggle('primary', b.dataset.f === 'all' ? !filters.size : filters.has(b.dataset.f)));
   };
   const refresh = () => {
     paintMarks(c.marks);
@@ -651,7 +653,15 @@ function grade() {
     const card = e.target.closest('.minis .card');
     if (card && c.marks) { const k = +card.dataset.k; c.marks[k] = c.marks[k] === 'o' ? 'x' : 'o'; refresh(); saveSoon(); return; }
     const f = e.target.closest('[data-f]');
-    if (f) { filter = f.dataset.f; applyFilter(); $('.minis').scrollTop = 0; return; }
+    if (f) {
+      const v = f.dataset.f;
+      if (v === 'all') filters.clear();
+      else if (filters.has(v)) filters.delete(v);
+      else filters.add(v);
+      applyFilter();
+      $('.minis').scrollTop = 0;
+      return;
+    }
     const a = e.target.closest('[data-act]')?.dataset.act;
     if (a === 'home') { save(); home(); }
     else if (a === 'finish' && c.marks) finish();

@@ -318,6 +318,20 @@ input[type=text] { -webkit-user-select: text; user-select: text; }
 .count-row .step { width: 64px; height: 56px; padding: 0; font-size: 1.8rem; line-height: 1; }
 .quick .btn { min-width: 64px; padding: .5em .7em; }
 .dan-box { display: grid; gap: 10px; }
+@media (max-width: 480px) {
+  .dlg { padding: 20px 14px; font-size: 1.05rem; }
+  .dlg.setup { gap: 12px; }
+  .count-row { gap: 6px; }
+  .count-row .lbl { width: 3.2em; font-size: 1.05rem; }
+  .count-row .cnt { min-width: 4.4em; font-size: 1.3rem; }
+  .count-row .step { width: 48px; height: 48px; font-size: 1.5rem; }
+  .quick { gap: 6px; }
+  .quick .btn { min-width: 0; padding: .45em .55em; font-size: 1rem; }
+  .dlg .dan-grid { gap: 6px; }
+  .dlg .dan-grid .btn { font-size: 1.1rem; padding: .6em 0; }
+  .bar .title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bar > .btn { font-size: .95rem; padding: .5em .7em; }
+}
 .dan-box.off { opacity: .35; pointer-events: none; }
 .dlg .dan.on { background: var(--accent-soft); border-color: var(--accent); color: #b5531c; }
 .dlg .dan.on::before { content: '✓ '; }

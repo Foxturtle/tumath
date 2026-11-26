@@ -2,7 +2,7 @@
 // 연산 연습 — 덧셈·뺄셈·곱셈·구구단 손글씨 학습지 (자동 채점 + 부모 확인, 틀린 문제 다시 풀기)
 // 누가 써도(IT에 익숙하지 않은 어르신도) 도움 없이 쓸 수 있게: 처음 안내, 화면별 도움말, 자동 업데이트·복구
 
-const VERSION = '2026.11.26-c';   // 부모님 메뉴에 표시 — 기기가 최신 버전인지 확인용
+const VERSION = '2026.11.26-d';   // 부모님 메뉴에 표시 — 기기가 최신 버전인지 확인용
 const N = 10000;          // 획 좌표 정규화 단위 (카드 크기 대비)
 const LW = 4;             // 펜 굵기(px)
 const INK = '#1d3c8f';
@@ -867,20 +867,70 @@ async function recognize(c, onProgress) {
       if (onProgress) onProgress(k, probs.length);
       await new Promise(r => setTimeout(r));
     }
-    const p = probs[k], strokes = c.ink[k] || [], g = c.geo && c.geo[k];
-    if (!strokes.length) { reco[k] = { text: '', conf: 1 }; continue; }
-    if (!g || !g.boxes.length) { reco[k] = null; continue; }        // 칸 위치 기록이 없는 옛 학습지
-    const px = strokes.map(s => s.pts.map((v, i) => v * (i % 2 ? g.h : g.w) / N));
-    const bx = g.boxes.map(b => b.map((v, i) => v * (i % 2 ? g.h : g.w) / N));
-    const bw = bx[0][2] - bx[0][0], bh = bx[0][3] - bx[0][1], last = bx[bx.length - 1];
-    // 답을 쓰는 줄만 읽음: 세로셈은 칸 줄(위의 올림·내림 메모, 곱셈 중간 계산은 제외), 가로셈은 = 오른쪽
-    const region = p.fmt === 'v' || p.fmt === 'vm'
-      ? { x0: bx[0][0] - bw * .35, x1: last[2] + bw * .35, y0: bx[0][1] - bh * .35, y1: bx[0][3] + bh * .6 }
-      : { x0: bx[0][0] - bw * .5, x1: g.w, y0: bx[0][1] - bh * .4, y1: bx[0][3] + bh * .4 };
-    const r = Digits.read(px, region);
+    const area = answerArea(c, k, probs[k]);
+    if (area === 'blank') { reco[k] = { text: '', conf: 1 }; continue; }
+    if (!area) { reco[k] = null; continue; }                          // 칸 위치 기록이 없는 옛 학습지
+    const r = Digits.read(area.px, area.region);
     reco[k] = { text: r.text, conf: +r.conf.toFixed(3) };
   }
   return reco;
+}
+// 문제 k의 답을 읽을 영역과 획(px). 글씨가 없으면 'blank', 칸 위치를 모르면 null
+function answerArea(c, k, p) {
+  const strokes = c.ink[k] || [], g = c.geo && c.geo[k];
+  if (!strokes.length) return 'blank';
+  if (!g || !g.boxes.length) return null;
+  const px = strokes.map(s => s.pts.map((v, i) => v * (i % 2 ? g.h : g.w) / N));
+  const bx = g.boxes.map(b => b.map((v, i) => v * (i % 2 ? g.h : g.w) / N));
+  const bw = bx[0][2] - bx[0][0], bh = bx[0][3] - bx[0][1], last = bx[bx.length - 1];
+  // 답을 쓰는 줄만 읽음: 세로셈은 칸 줄(위의 올림·내림 메모, 곱셈 중간 계산은 제외), 가로셈은 = 오른쪽
+  const region = p.fmt === 'v' || p.fmt === 'vm'
+    ? { x0: bx[0][0] - bw * .35, x1: last[2] + bw * .35, y0: bx[0][1] - bh * .35, y1: bx[0][3] + bh * .6 }
+    : { x0: bx[0][0] - bw * .5, x1: g.w, y0: bx[0][1] - bh * .4, y1: bx[0][3] + bh * .4 };
+  return { px, region };
+}
+
+// ---------- 글씨 자료 모으기 (인식 개선용) ----------
+// 부모님이 맞음(○)으로 확정한 문제는 아이가 쓴 숫자 = 정답 숫자. 숫자 하나씩 잘라 정답을 붙여 이 기기에만 모아 둠.
+// 숫자 모양(획)만 저장하고 이름·기록은 넣지 않음. "보내기"를 누르지 않으면 기기 밖으로 나가지 않음
+const SAMPLE_KEY = 'tumath.samples', SAMPLE_MAX = 3000;
+function loadSamples() {
+  try { const a = JSON.parse(localStorage.getItem(SAMPLE_KEY)); return Array.isArray(a) ? a : []; } catch (e) { return []; }
+}
+function saveSamples(a) {
+  for (let list = a.slice(-SAMPLE_MAX); list.length; list = list.slice(Math.floor(list.length / 2))) {
+    try { localStorage.setItem(SAMPLE_KEY, JSON.stringify(list)); return; } catch (e) { /* 공간이 부족하면 오래된 것부터 반씩 버림 */ }
+  }
+  try { localStorage.removeItem(SAMPLE_KEY); } catch (e) { /* 무시 */ }
+}
+// 숫자 하나의 획들을 0~255 상자에 맞춰(가로세로 비율 유지) 획마다 [x,y,x,y…] 바이트 → base64
+function encodeGlyph(strokes, bb) {
+  const s = 255 / Math.max(bb.x1 - bb.x0, bb.y1 - bb.y0, 1);
+  return strokes.map(st => {
+    const bytes = [];
+    for (let i = 0; i < st.length; i += 2) {
+      const x = Math.max(0, Math.min(255, Math.round((st[i] - bb.x0) * s)));
+      const y = Math.max(0, Math.min(255, Math.round((st[i + 1] - bb.y0) * s)));
+      const n = bytes.length;
+      if (n && bytes[n - 2] === x && bytes[n - 1] === y) continue;   // 같은 점 반복은 생략
+      bytes.push(x, y);
+    }
+    return btoa(String.fromCharCode(...bytes));
+  });
+}
+function collectSamples(c, probs) {
+  const out = [], day = new Date().toISOString().slice(0, 10);
+  probs.forEach((p, k) => {
+    if (c.marks[k] !== 'o') return;
+    const area = answerArea(c, k, p);
+    if (!area || area === 'blank') return;
+    const groups = Digits.segment(area.px, area.region), ans = String(answer(p));
+    if (groups.length !== ans.length) return;                        // 숫자를 몇 개 썼는지 애매하면 버림
+    const r = c.reco && c.reco[k], read = r && r.text && r.text.length === ans.length ? r.text : '';
+    groups.forEach((g, i) => out.push({ d: +ans[i], p: read ? +read[i] : null, s: encodeGlyph(g.strokes, g.bb), t: day }));
+  });
+  if (out.length) saveSamples(loadSamples().concat(out));
+  return out.length;
 }
 const recoOk = (p, r) => !!r && r.text === String(answer(p));
 const recoUnsure = r => r === null || (!!r && !!r.text && r.conf < UNSURE);
@@ -995,6 +1045,7 @@ function finish() {
   });
   const elapsed = c.elapsed || 0;
   S.history.unshift({ date: new Date().toISOString(), title: c.title, score, total: probs.length, elapsed, stats: sheetStats(probs, c.marks) });
+  try { collectSamples(c, probs); } catch (e) { console.warn('collect samples failed', e); }   // 실패해도 채점은 계속
   S.history.length = Math.min(S.history.length, 300);
   S.last = { title: c.title, pages: c.pages, ink: c.ink, marks: c.marks, pageSize: c.pageSize, score, total: probs.length, elapsed };
   S.current = null;
@@ -1032,6 +1083,7 @@ function result() {
 // ---------- 화면: 부모님 메뉴 ----------
 function parentMenu() {
   setScreen('parent');
+  const nSamples = loadSamples().length;
   const rows = S.history.slice(0, 50).map(h => {
     const d = new Date(h.date).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
     const t = S.timer ? `<td class="t">${h.elapsed ? fmtTime(h.elapsed) : ''}</td>` : '';
@@ -1056,6 +1108,11 @@ function parentMenu() {
         </div>
       </section>
       <section><h3>기록</h3>${rows ? `<table class="history">${rows}</table>` : '<p class="empty">아직 기록이 없어요.</p>'}</section>
+      <section class="samples"><h3>글씨 자료 <small>(글씨 읽기를 더 잘하게 만들 때 써요)</small></h3>
+        <p class="empty">맞은 문제의 글씨를 숫자 모양만 이 기기에 모아 둬요. 이름이나 기록은 들어가지 않고, <b>보내기</b>를 누르지 않으면 기기 밖으로 나가지 않아요.</p>
+        <div class="switch-row"><span>모은 글씨 <b>${nSamples}</b>개</span>
+          <button class="btn" data-act="samples"${nSamples ? '' : ' disabled'}>보내기 (카카오톡 등)</button></div>
+      </section>
       <p class="ver">앱 버전 ${VERSION} · © 2026 foxturtle</p>
     </main>`;
   $('#touch').onchange = e => { S.allowTouch = e.target.checked; save(); };
@@ -1065,12 +1122,46 @@ function parentMenu() {
     const a = e.target.closest('[data-act]')?.dataset.act;
     if (a === 'home') home();
     else if (a === 'stats') statsScreen();
+    else if (a === 'samples') shareSamples();
     else if (a === 'name') nameEditor();
     else if (a === 'pin') setPin(parentMenu, parentMenu);
     else if (a === 'clear' && await modal('<p>다시 풀기 목록을 비울까요?</p>', [{ label: '취소', value: false }, { label: '비우기', value: true, primary: true }])) {
       S.retry = []; save(); parentMenu();
     }
   };
+}
+
+// 글씨 자료를 파일 하나로 만들어 휴대폰 공유 창(카카오톡·메일 등)으로 보냄. 공유가 안 되는 기기(PC 등)는 내려받기.
+// 공유할 수 있는 파일 형식이 정해져 있어서, 내용은 JSON이지만 .txt로 만듦
+async function shareSamples() {
+  const samples = loadSamples();
+  if (!samples.length) return;
+  const day = new Date().toISOString().slice(0, 10);
+  const body = JSON.stringify({ app: 'tumath-digits', version: VERSION, created: new Date().toISOString(), count: samples.length, samples });
+  const file = new File([body], `연산연습_글씨자료_${day}_${samples.length}개.txt`, { type: 'text/plain' });
+  let sent = false;
+  try {
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: '연산 연습 글씨 자료' });
+      sent = true;
+    }
+  } catch (e) {
+    if (e && e.name === 'AbortError') return;                         // 공유 창을 닫음
+  }
+  if (!sent) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(file);
+    a.download = file.name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    sent = true;
+  }
+  const clear = await modal(`<h3>글씨 자료 ${samples.length}개를 보냈어요</h3><p>이 기기에 모아 둔 글씨 자료를 지울까요?<br>지우면 다음에는 <b>새로 모은 것만</b> 보내요.</p>`,
+    [{ label: '남겨 두기', value: false }, { label: '지우기', value: true, primary: true }]);
+  if (clear) saveSamples([]);
+  parentMenu();
 }
 
 // ---------- 화면: 자주 틀리는 문제 (부모님) ----------
@@ -1416,6 +1507,7 @@ const HELP = {
     '<b>풀이 시간 재기</b> — 켜면 다 푼 뒤 걸린 시간이 나와요.',
     '<b>비밀번호 바꾸기</b> — 부모님 비밀번호를 새로 정해요.',
     '<b>기록</b> — 날짜별로 무엇을 풀었고 몇 점이었는지 보여요.',
+    '<b>글씨 자료</b> — 맞은 문제의 글씨를 모아 둔 것이에요. 글씨 읽기를 더 잘하게 만들 때 쓰여요. 안 써도 괜찮아요.',
   ]],
   pin: ['비밀번호', [
     '부모님이 정한 <b>숫자 4자리</b>를 눌러요.',

@@ -149,8 +149,8 @@ const Digits = (() => {
   }
 
   // region: {x0,y0,x1,y1} (px) — 이 안에 획 중심이 있는 것만 답으로 봄 (올림 메모 등은 제외)
-  // strokes: [[x,y,x,y...]] (px)
-  function read(strokes, region) {
+  // strokes: [[x,y,x,y...]] (px). 숫자별 획 묶음 [{strokes, bb}] (왼쪽부터)
+  function segment(strokes, region) {
     const items = [];
     for (const st of strokes) {
       const bb = bbox(st), cx = (bb.x0 + bb.x1) / 2, cy = (bb.y0 + bb.y1) / 2;
@@ -158,9 +158,12 @@ const Digits = (() => {
       if (Math.max(bb.x1 - bb.x0, bb.y1 - bb.y0) < 3) continue;   // 실수로 찍힌 점
       items.push({ st, bb });
     }
-    const out = group(items).map(g => classify(toImage(g.strokes, g.bb)));
+    return group(items);
+  }
+  function read(strokes, region) {
+    const out = segment(strokes, region).map(g => classify(toImage(g.strokes, g.bb)));
     return { text: out.map(o => o.d).join(''), conf: out.length ? Math.min(...out.map(o => o.p)) : 1, digits: out };
   }
 
-  return { load, read, classify, toImage };
+  return { load, read, segment, classify, toImage };
 })();

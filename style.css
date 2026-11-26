@@ -389,3 +389,41 @@ input[type=text] { -webkit-user-select: text; user-select: text; }
 .dan-box.off { opacity: .35; pointer-events: none; }
 .dlg .dan.on { background: var(--accent-soft); border-color: var(--accent); color: #b5531c; }
 .dlg .dan.on::before { content: '✓ '; }
+
+/* ---------- 도움말 ---------- */
+.help-btn {
+  flex: none; display: inline-flex; align-items: center; gap: 4px; height: 44px; padding: 0 12px;
+  border-radius: 14px; background: #eef5ff; border: 2px solid #c7dbf5; color: #2a5d9f; font-size: 1.05rem; font-weight: 800;
+}
+.help-btn span { font-size: 1rem; }
+.dlg-head { display: flex; align-items: center; justify-content: center; gap: 10px; position: relative; }
+.dlg-head .help-btn { position: absolute; right: 0; height: 38px; padding: 0 10px; }
+#help { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; padding: 16px; background: rgba(40, 30, 20, .45); }
+#help[hidden] { display: none; }
+.help-card {
+  background: var(--paper); border-radius: 24px; padding: 26px 26px 22px; max-width: 560px; width: 100%;
+  max-height: calc(100dvh - 32px); overflow-y: auto; display: grid; gap: 16px; touch-action: pan-y;
+}
+.help-card h3 { font-size: 1.5rem; color: #2a5d9f; }
+.help-card ul { margin: 0; padding-left: 1.1em; display: grid; gap: 12px; font-size: 1.25rem; line-height: 1.5; }
+.help-card li b { color: var(--accent); }
+.help-card .btn { justify-self: center; min-width: 180px; }
+@media (max-width: 600px) {
+  .help-btn span { display: none; }
+  .help-btn { width: 44px; justify-content: center; padding: 0; }
+  .help-card ul { font-size: 1.1rem; }
+}
+
+/* ---------- 처음 안내 · 비밀번호 찾기 ---------- */
+.onboard h2 { font-size: 2rem; }
+.onboard p { font-size: 1.25rem; color: var(--text); }
+.ob-steps { margin: 4px 0 8px; padding: 0; list-style: none; display: grid; gap: 10px; font-size: 1.3rem; text-align: left; }
+.ob-steps b { color: var(--accent); margin-right: 4px; }
+.ob-steps small { color: var(--muted); font-size: .9rem; }
+.ob-q { font-size: 1.6rem; }
+.ob-sub { font-size: 1.05rem; color: var(--muted); line-height: 1.5; }
+.name-field::placeholder { color: #cfc6b8; font-weight: 700; }
+.link-btn { margin-top: 6px; font-size: 1.1rem; color: #2a5d9f; text-decoration: underline; padding: 8px 12px; }
+.recover-q { font-size: 2.2rem; font-weight: 900; font-variant-numeric: tabular-nums; margin: 4px 0 6px; }
+.recover-a { display: inline-block; min-width: 3.5em; border-bottom: 3px solid var(--accent); color: var(--accent); }
+.keypad .ok { background: var(--accent); border-color: var(--accent); color: #fff; font-size: 1.3rem; }

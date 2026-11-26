@@ -1,7 +1,8 @@
 'use strict';
-// 연산 연습 — 두 자리 덧셈/뺄셈, 구구단 손글씨 학습지 (부모 채점, 틀린 문제 다시 풀기)
+// 연산 연습 — 덧셈·뺄셈·곱셈·구구단 손글씨 학습지 (자동 채점 + 부모 확인, 틀린 문제 다시 풀기)
+// 누가 써도(IT에 익숙하지 않은 어르신도) 도움 없이 쓸 수 있게: 처음 안내, 화면별 도움말, 자동 업데이트·복구
 
-const VERSION = '2026.11.26-a';   // 부모님 메뉴에 표시 — 기기가 최신 버전인지 확인용
+const VERSION = '2026.11.26-b';   // 부모님 메뉴에 표시 — 기기가 최신 버전인지 확인용
 const N = 10000;          // 획 좌표 정규화 단위 (카드 크기 대비)
 const LW = 4;             // 펜 굵기(px)
 const INK = '#1d3c8f';
@@ -9,20 +10,38 @@ const app = document.getElementById('app');
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = s => String(s).replace(/[&<>"']/g, ch => `&#${ch.charCodeAt(0)};`);
-const kid = () => esc(S.name || 'TU');
+const kid = () => esc(S.name || '');
 
 // ---------- 저장 ----------
 const KEY = 'tumath.v1';
 const S = load();
 function load() {
-  const d = { name: 'TU', pin: null, allowTouch: false, timer: false, rotate: false, current: null, last: null, retry: [], history: [] };
-  try { return Object.assign(d, JSON.parse(localStorage.getItem(KEY)) || {}); } catch (e) { return d; }
+  const d = { name: '', pin: null, onboarded: false, helpSeen: {}, allowTouch: false, timer: false, rotate: false, current: null, last: null, retry: [], history: [] };
+  let s = d;
+  try { s = Object.assign(d, JSON.parse(localStorage.getItem(KEY)) || {}); } catch (e) { s = d; }
+  if (!Array.isArray(s.retry)) s.retry = [];
+  if (!Array.isArray(s.history)) s.history = [];
+  if (!s.helpSeen || typeof s.helpSeen !== 'object') s.helpSeen = {};
+  if (s.current && !(Array.isArray(s.current.pages) && s.current.pages.length)) s.current = null;   // 깨진 학습지는 버림
+  if (!s.onboarded && (s.pin || s.history.length)) s.onboarded = true;                            // 이미 쓰던 사람은 안내 건너뜀
+  return s;
 }
-let saveTimer = 0;
+// 결과 화면용 사본(last)은 손글씨가 커서 저장하지 않음 (결과는 채점 직후에만 보여 줌)
+let saveTimer = 0, saveFailNotified = false;
 function save() {
   clearTimeout(saveTimer);
-  try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { console.warn('save failed', e); }
+  try {
+    localStorage.setItem(KEY, JSON.stringify(S, (k, v) => (k === 'last' ? undefined : v)));
+  } catch (e) {
+    console.warn('save failed', e);
+    if (!saveFailNotified) {
+      saveFailNotified = true;
+      modal('<h3>저장 공간이 부족해요</h3><p>풀던 내용을 저장하지 못했어요.<br>다음부터는 <b>문제 수를 줄여서</b> 풀어 주세요.</p>', [{ label: '알겠어요', value: true, primary: true }]);
+    }
+  }
 }
+// 브라우저가 저장 공간을 정리할 때 이 앱 기록은 지우지 않도록 요청 (지원하는 기기에서만, 조용히)
+if (navigator.storage && navigator.storage.persist) navigator.storage.persisted().then(p => p || navigator.storage.persist()).catch(() => {});
 function saveSoon() { clearTimeout(saveTimer); saveTimer = setTimeout(save, 400); }
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) { timerStop(); save(); }
@@ -49,6 +68,7 @@ function timerStop() {
 function setScreen(name) {
   curScreen = name;
   if (name === 'sheet') timerStart(); else timerStop();
+  if (name === 'intro' || name === 'home') setTimeout(applyUpdateIfIdle);   // 새 버전이 받아져 있으면 이때 적용
 }
 const fmtTime = ms => {
   const s = Math.round(ms / 1000), m = Math.floor(s / 60);
@@ -400,12 +420,12 @@ const STAR = Array.from({ length: 10 }, (_, i) => {
 }).join(' ');
 function intro() {
   setScreen('intro');
-  const n = kid(), h = new Date().getHours();
-  const greet = h < 5 ? `${n}, 아직 깜깜한 밤이에요 🌙`
-    : h < 11 ? `좋은 아침이에요, ${n}! ☀️`
-    : h < 17 ? `안녕, ${n}! 오늘도 반가워요 👋`
-    : h < 21 ? `오늘 하루도 수고했어요, ${n}! 🌇`
-    : `${n}, 조금만 하고 자요 🌙`;
+  const n = kid(), h = new Date().getHours(), call = n ? `, ${n}` : '';   // 이름이 없으면 이름 없이 인사
+  const greet = h < 5 ? `${n ? `${n}, ` : ''}아직 깜깜한 밤이에요 🌙`
+    : h < 11 ? `좋은 아침이에요${call}! ☀️`
+    : h < 17 ? `안녕${call}! 오늘도 반가워요 👋`
+    : h < 21 ? `오늘 하루도 수고했어요${call}! 🌇`
+    : `${n ? `${n}, ` : ''}조금만 하고 자요 🌙`;
   const todayKey = new Date().toDateString();
   const today = S.history.filter(x => new Date(x.date).toDateString() === todayKey).length;
   const sub = today ? `오늘 벌써 ${today}장이나 풀었어요!` : '오늘도 같이 해 볼까요?';
@@ -413,8 +433,9 @@ function intro() {
   const colors = ['#e07b39', '#3a86c8', '#3aa66b', '#f5b301'];
   const floaters = Array.from({ length: 18 }, (_, i) =>
     `<span style="left:${rnd(2, 94)}%;top:${rnd(3, 90)}%;--d:-${(Math.random() * 6).toFixed(2)}s;--c:${colors[i % 4]};font-size:${rnd(28, 64)}px">${syms[rnd(0, syms.length - 1)]}</span>`).join('');
-  const letters = [...(S.name || 'TU')].map((ch, i) => `<span style="--i:${i}">${esc(ch)}</span>`).join('');
-  const len = [...(S.name || 'TU')].length;
+  const badgeText = S.name || '+×';                 // 이름이 없으면 별 안에 연산 기호
+  const letters = [...badgeText].map((ch, i) => `<span style="--i:${i}">${esc(ch)}</span>`).join('');
+  const len = [...badgeText].length;
   app.innerHTML = `
     <main class="intro">
       <div class="floaters" aria-hidden="true">${floaters}</div>
@@ -432,13 +453,13 @@ function intro() {
         <div class="letters">${letters}</div></div>
         <i class="spark s1">★</i><i class="spark s2">★</i><i class="spark s3">✦</i>
       </div>
-      <h1><b>${n}</b>만을 위한<br>연산 연습</h1>
+      <h1>${n ? `<b>${n}</b>만을 위한` : '<b>나만의</b>'}<br>연산 연습</h1>
       <p class="greet">${greet}</p>
       <p class="sub">${sub}</p>
       <button class="btn primary big start" data-act="start">시작하기 ▶</button>
       <p class="credit">made by foxturtle</p>
     </main>`;
-  app.onclick = e => { if (e.target.closest('[data-act=start]')) home(); };
+  app.onclick = e => { if (e.target.closest('[data-act=start]')) (S.onboarded ? home : onboarding)(); };
 }
 
 // ---------- 화면: 홈 ----------
@@ -449,7 +470,8 @@ function home() {
   if (c && c.status === 'solving') banner = `<div class="banner">풀던 학습지가 있어요 · ${c.title}<button class="btn primary" data-act="resume">이어서 풀기</button></div>`;
   if (c && c.status === 'submitted') banner = `<div class="banner">채점을 기다리는 학습지가 있어요 · ${c.title}<button class="btn primary" data-act="grade">부모님 채점하기</button></div>`;
   app.innerHTML = `
-    <header class="bar"><div class="title"><span class="kid">${kid()}</span>의 연산 연습</div><button class="icon-btn" data-act="parent" aria-label="부모님 메뉴">⚙️</button></header>
+    <header class="bar"><div class="title">${kid() ? `<span class="kid">${kid()}</span>의 ` : ''}연산 연습</div>
+      ${helpBtn('home')}<button class="icon-btn" data-act="parent" aria-label="부모님 메뉴">⚙️</button></header>
     <main class="home">
       ${banner}
       <div class="choices">
@@ -552,7 +574,7 @@ function opDialog(kind) {
   let carry = c.carry, n = c.n;
   const types = () => K.types.filter(t => sel.has(t));
   const m = openDialog(`
-    <h3>${K.label}</h3>
+    <div class="dlg-head"><h3>${K.label}</h3>${helpBtn('op')}</div>
     <section class="sec"><p class="sec-t"><b>①</b> 자릿수 <small>여러 개 고를 수 있어요</small></p>
       <div class="chips">${K.types.map(t => `<button class="btn chip" data-t="${t}">${typeLabel(t)}</button>`).join('')}</div></section>
     <section class="sec"><label class="switch"><span><b>②</b> ${K.carry} 문제 넣기</span><input type="checkbox" id="carry"><i aria-hidden="true"></i></label>
@@ -598,7 +620,7 @@ function guguDialog() {
   const c = getSetup('gugu'), sel = new Set(c.dans);
   let n = c.n;
   const m = openDialog(`
-    <h3>구구단</h3>
+    <div class="dlg-head"><h3>구구단</h3>${helpBtn('gugu')}</div>
     <section class="sec"><p class="sec-t"><b>①</b> 몇 단? <small>여러 개 고르면 섞여요</small></p>
       <div class="dan-grid">${ALL_DANS.map(d => `<button class="btn dan" data-d="${d}">${d}단</button>`).join('')}</div>
       <div class="row"><button class="btn" data-act="all"></button></div></section>
@@ -636,7 +658,7 @@ function mixDialog() {
   const counts = getSetup('mix');
   const total = () => MIX_KINDS.reduce((s, [k]) => s + counts[k], 0);
   const m = openDialog(`
-    <h3>섞어 풀기</h3>
+    <div class="dlg-head"><h3>섞어 풀기</h3>${helpBtn('mix')}</div>
     ${MIX_KINDS.map(([k, label]) => `<div class="mix-row">
       ${countHTML(k, `<span class="lbl">${label}<small>${summaryOf(k)}</small></span>`, false)}</div>`).join('')}
     <p class="hint">자릿수·받아올림·단은 각 메뉴에서 마지막으로 고른 대로 나와요</p>
@@ -684,6 +706,7 @@ function sheet() {
         <button class="tool${tool === 'eraser' ? ' on' : ''}" data-act="eraser" aria-label="지우개">🧽</button>
         <button class="tool" data-act="undo" aria-label="되돌리기">↩️</button>
       </div>
+      ${helpBtn('sheet')}
     </header>
     <main class="page ${layoutOf(pg)}">${pg.map((p, i) => cardHTML(p, off + i)).join('')}</main>
     <footer class="nav">
@@ -693,6 +716,7 @@ function sheet() {
     </footer>`;
   $$('.page .card').forEach(cd => { const k = cd.dataset.k; attachInk(cd, () => c.ink[k] || (c.ink[k] = []), true); });
   setScreen('sheet');
+  autoHelp('sheet');
   const main = $('main.page');
   const recordSize = () => {
     if (!main.isConnected || !main.clientWidth || !main.clientHeight) return;   // 화면 전환으로 사라질 때는 무시
@@ -815,6 +839,7 @@ function grade() {
     <header class="bar">
       <button class="icon-btn" data-act="home" aria-label="처음으로">🏠</button>
       <div class="title">채점하기<small>${c.title}${time}</small></div>
+      ${helpBtn('grade')}
       <button class="btn primary" data-act="finish" disabled>채점 완료 · <span id="sc">글씨 읽는 중…</span></button>
     </header>
     <div class="grade-help">글씨를 읽어서 자동으로 채점했어요. <b class="r">✎</b>는 글씨에서 읽은 답, <b class="g">초록</b>은 정답이에요.
@@ -862,6 +887,7 @@ function grade() {
     $('.filters').hidden = false;
     applyFilter();
     $('[data-act=finish]').disabled = false;
+    autoHelp('grade');   // 처음 채점하는 어른에게 한 번 설명
   };
   if (c.marks) ready();
   else {
@@ -926,10 +952,10 @@ function result() {
   setScreen('result');
   const L = S.last, r = L.score / L.total, wrong = flat(L).filter((_, k) => L.marks[k] === 'x');
   const stars = r >= .9 ? 3 : r >= .7 ? 2 : 1;
-  const n = kid();
-  const msg = r === 1 ? `모두 맞았어요! 최고예요, ${n} 🎉` : r >= .8 ? `참 잘했어요, ${n}! 👍` : `조금만 더 힘내요, ${n}! 💪`;
+  const call = kid() ? `, ${kid()}` : '';
+  const msg = r === 1 ? `모두 맞았어요! 최고예요${call} 🎉` : r >= .8 ? `참 잘했어요${call}! 👍` : `조금만 더 힘내요${call}! 💪`;
   app.innerHTML = `
-    <header class="bar"><button class="icon-btn" data-act="home" aria-label="처음으로">🏠</button><div class="title">${L.title} 결과</div></header>
+    <header class="bar"><button class="icon-btn" data-act="home" aria-label="처음으로">🏠</button><div class="title">${L.title} 결과</div>${helpBtn('result')}</header>
     <div class="result-top">
       <div class="stars">${'★'.repeat(stars)}<span class="off">${'★'.repeat(3 - stars)}</span></div>
       <div class="score">${L.score}<span>/ ${L.total}</span></div>
@@ -957,11 +983,11 @@ function parentMenu() {
     return `<tr><td>${d}</td><td>${h.title}</td>${t}<td>${h.score} / ${h.total}</td></tr>`;
   }).join('');
   app.innerHTML = `
-    <header class="bar"><button class="icon-btn" data-act="home" aria-label="처음으로">🏠</button><div class="title">부모님 메뉴</div></header>
+    <header class="bar"><button class="icon-btn" data-act="home" aria-label="처음으로">🏠</button><div class="title">부모님 메뉴</div>${helpBtn('parent')}</header>
     <main class="parent">
       <section><h3>설정</h3>
         <div class="switch-row"><span>아이 이름<small>시작 화면과 홈에 나와요 (이니셜이나 별명 추천)</small></span>
-          <button class="btn name-btn" data-act="name">${kid()} ✎</button></div>
+          <button class="btn name-btn" data-act="name">${kid() || '정하기'} ✎</button></div>
         <label class="switch-row"><span>손가락으로도 쓰기<small>끄면 S펜으로만 써져요 (손바닥이 닿아도 안 써짐)</small></span>
           <input type="checkbox" id="touch"${S.allowTouch ? ' checked' : ''}></label>
         <label class="switch-row"><span>화면 돌리기 허용<small>끄면 세로로 고정돼요 (홈 화면에 설치한 앱에서만 적용)</small></span>
@@ -1027,20 +1053,22 @@ function hangulBack(st) {
   else st.cur = null;
 }
 
-// 이름 바꾸기: 기기 키보드가 안 떠도 되도록 화면 글자판(한글/ABC)을 함께 둠
-function nameEditor() {
+// 이름 바꾸기: 기기 키보드가 안 떠도 되도록 화면 글자판(한글/ABC)을 함께 둠.
+// 처음 안내에서도 씀 (onboard: 제목·버튼을 "건너뛰기 / 다음"으로)
+function nameEditor({ onDone = parentMenu, onCancel = parentMenu, onboard = false } = {}) {
   setScreen('name');
   const MAX = 6, KO = [...'ㄱㄴㄷㄹㅁㅂㅅㅇㅈㅊㅋㅌㅍㅎㄲㄸㅃㅆㅉㅏㅑㅓㅕㅗㅛㅜㅠㅡㅣㅐㅒㅔㅖ'], EN = [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'];
-  let st = { done: S.name || 'TU', cur: null }, mode = /[가-힣]/.test(S.name) ? 'ko' : 'en';
+  let st = { done: S.name || '', cur: null }, mode = !S.name || /[가-힣]/.test(S.name) ? 'ko' : 'en';
   const text = () => st.done + (st.cur ? syllable(st.cur) : '');
   app.innerHTML = `
     <header class="bar">
-      <button class="icon-btn" data-act="back" aria-label="취소">✕</button>
-      <div class="title">아이 이름</div>
-      <button class="btn primary" data-act="ok">완료</button>
+      ${onboard ? '<button class="btn" data-act="back">건너뛰기</button>' : '<button class="icon-btn" data-act="back" aria-label="취소">✕</button>'}
+      <div class="title">${onboard ? '① 아이 이름' : '아이 이름'}</div>
+      <button class="btn primary" data-act="ok">${onboard ? '다음 ▶' : '완료'}</button>
     </header>
     <main class="center name-edit">
-      <input type="text" id="nm" class="name-field" maxlength="${MAX}" autocomplete="off" spellcheck="false">
+      ${onboard ? '<h2 class="ob-q">아이 이름을 알려 주세요</h2><p class="ob-sub">시작 화면에 "○○만을 위한 연산 연습"으로 나와요.<br>비워 두고 <b>건너뛰기</b>를 눌러도 돼요.</p>' : ''}
+      <input type="text" id="nm" class="name-field" maxlength="${MAX}" autocomplete="off" spellcheck="false" placeholder="이름">
       <p>아래 글자판을 누르거나, 칸을 눌러 키보드로 입력해요 (${MAX}글자까지)</p>
       <div class="row pad-tabs"><button class="btn" data-mode="ko">한글</button><button class="btn" data-mode="en">ABC</button></div>
       <div class="letter-pad"></div>
@@ -1066,25 +1094,66 @@ function nameEditor() {
     } else if (b.dataset.mode) {
       st = { done: text(), cur: null }; mode = b.dataset.mode; paint();
     } else if (b.dataset.act === 'del') { hangulBack(st); f.value = text(); }
-    else if (b.dataset.act === 'ok') { S.name = text().trim() || 'TU'; save(); parentMenu(); }
-    else if (b.dataset.act === 'back') parentMenu();
+    else if (b.dataset.act === 'ok') { S.name = text().trim(); save(); onDone(); }
+    else if (b.dataset.act === 'back') onCancel();
   };
 }
 
+// ---------- 처음 안내 (처음 설치한 사람만) ----------
+// 환영 → ① 아이 이름(건너뛰기 가능) → ② 부모님 비밀번호(나중에 가능) → 준비 끝
+function onboarding() {
+  setScreen('onboard');
+  app.innerHTML = `
+    <main class="center onboard">
+      <div class="big-emoji">👋</div>
+      <h2>처음 오셨네요!</h2>
+      <p>두 가지만 정하면 바로 시작할 수 있어요.</p>
+      <ol class="ob-steps"><li><b>①</b> 아이 이름 <small>(안 정해도 돼요)</small></li><li><b>②</b> 부모님 비밀번호 숫자 4자리</li></ol>
+      <button class="btn primary big" data-act="go">시작하기 ▶</button>
+    </main>`;
+  app.onclick = e => {
+    if (!e.target.closest('[data-act=go]')) return;
+    const done = () => onboardDone();
+    const pin = () => setPin(done, done, { title: '② 부모님 비밀번호', sub: '채점과 설정은 부모님만 할 수 있게<br>아이가 모르는 숫자 4자리를 정해 주세요', later: true });
+    nameEditor({ onDone: pin, onCancel: () => { S.name = ''; save(); pin(); }, onboard: true });
+  };
+}
+function onboardDone() {
+  S.onboarded = true;
+  save();
+  setScreen('onboard');
+  app.innerHTML = `
+    <main class="center onboard">
+      <div class="big-emoji">🎉</div>
+      <h2>준비 끝!</h2>
+      <ul class="ob-steps">
+        <li>덧셈·뺄셈·곱셈·구구단 중 하나를 누르고</li>
+        <li>문제 수를 고른 뒤 <b>시작</b>을 누르면 돼요.</li>
+        <li>화면마다 있는 <b>❓ 도움말</b>을 누르면 사용법이 나와요.</li>
+      </ul>
+      <button class="btn primary big" data-act="go">처음 화면으로 ▶</button>
+    </main>`;
+  app.onclick = e => { if (e.target.closest('[data-act=go]')) home(); };
+}
+
 // ---------- 비밀번호 ----------
-function pinPad({ title, sub, onCode, onCancel }) {
+// extra: 키패드 아래 글자 버튼 하나 ({label, onClick}), cancelLabel: 닫기 대신 쓸 글자 (예: "나중에")
+function pinPad({ title, sub, onCode, onCancel, extra, cancelLabel }) {
   setScreen('pin');
   let code = '';
   app.innerHTML = `
-    <header class="bar"><button class="icon-btn" data-act="cancel" aria-label="닫기">✕</button><div class="title"></div></header>
+    <header class="bar">${cancelLabel ? `<button class="btn" data-act="cancel">${cancelLabel}</button>` : '<button class="icon-btn" data-act="cancel" aria-label="닫기">✕</button>'}
+      <div class="title"></div>${helpBtn('pin')}</header>
     <main class="center pin"><h2>${title}</h2><p>${sub}</p><div class="pin-dots">${'<i></i>'.repeat(4)}</div>
       <div class="keypad">${[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => `<button data-n="${n}">${n}</button>`).join('')}
-        <span></span><button data-n="0">0</button><button data-act="del" aria-label="지우기">⌫</button></div></main>`;
+        <span></span><button data-n="0">0</button><button data-act="del" aria-label="지우기">⌫</button></div>
+      ${extra ? `<button class="link-btn" data-act="extra">${extra.label}</button>` : ''}</main>`;
   const dots = $$('.pin-dots i'), paint = () => dots.forEach((d, i) => d.classList.toggle('on', i < code.length));
   app.onclick = e => {
     const b = e.target.closest('button');
     if (!b) return;
     if (b.dataset.act === 'cancel') return onCancel();
+    if (b.dataset.act === 'extra') return extra.onClick();
     if (b.dataset.act === 'del') { code = code.slice(0, -1); return paint(); }
     if (b.dataset.n == null || code.length >= 4) return;
     code += b.dataset.n;
@@ -1096,11 +1165,13 @@ function pinPad({ title, sub, onCode, onCancel }) {
     }, 150);
   };
 }
-function setPin(next, cancel) {
+// later: 처음 안내에서는 "나중에"로 건너뛸 수 있음 (채점·설정에 처음 들어갈 때 다시 정함)
+function setPin(next, cancel, { title = '부모님 비밀번호 정하기', sub = '아이가 모르는 숫자 4자리를 눌러 주세요', later = false } = {}) {
+  const cancelLabel = later ? '나중에' : '';
   pinPad({
-    title: '부모님 비밀번호 정하기', sub: '아이가 모르는 숫자 4자리를 눌러 주세요', onCancel: cancel,
+    title, sub, onCancel: cancel, cancelLabel,
     onCode: first => pinPad({
-      title: '한 번 더 눌러 주세요', sub: '확인을 위해 같은 숫자를 다시 눌러 주세요', onCancel: cancel,
+      title: '한 번 더 눌러 주세요', sub: '확인을 위해 같은 숫자를<br>다시 눌러 주세요', onCancel: cancel, cancelLabel,
       onCode: second => {
         if (second !== first) return false;
         S.pin = first; save(); next();
@@ -1110,7 +1181,48 @@ function setPin(next, cancel) {
 }
 function requirePin(next, cancel) {
   if (!S.pin) return setPin(next, cancel);
-  pinPad({ title: '부모님 확인', sub: '비밀번호 4자리를 눌러 주세요', onCancel: cancel, onCode: c => c === S.pin ? next() : false });
+  pinPad({
+    title: '부모님 확인', sub: '비밀번호 4자리를 눌러 주세요', onCancel: cancel,
+    onCode: c => c === S.pin ? next() : false,
+    extra: { label: '비밀번호를 잊었어요', onClick: () => pinRecover(next, cancel) },
+  });
+}
+// 비밀번호 찾기: 어른만 풀 수 있는 곱셈(세 자리 × 두 자리)을 맞히면 새 비밀번호를 정함. 기록은 그대로
+function pinRecover(next, cancel) {
+  setScreen('pin');
+  let a, b, ans = '';
+  const ask = () => { a = rnd(123, 987); b = rnd(12, 98); ans = ''; };
+  ask();
+  const render = () => {
+    app.innerHTML = `
+      <header class="bar"><button class="icon-btn" data-act="cancel" aria-label="닫기">✕</button><div class="title">비밀번호 찾기</div>${helpBtn('recover')}</header>
+      <main class="center pin">
+        <h2>어른 확인</h2>
+        <p>아래 곱셈을 풀면 비밀번호를 새로 정할 수 있어요.<br><b>아이 기록은 그대로</b> 남아요. (계산기를 써도 돼요)</p>
+        <div class="recover-q">${a} × ${b} = <span class="recover-a">${ans || '?'}</span></div>
+        <div class="keypad">${[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => `<button data-n="${n}">${n}</button>`).join('')}
+          <button data-act="del" aria-label="지우기">⌫</button><button data-n="0">0</button><button class="ok" data-act="ok">확인</button></div>
+        <button class="link-btn" data-act="new">다른 문제로 바꾸기</button>
+      </main>`;
+  };
+  render();
+  app.onclick = e => {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    const act = btn.dataset.act;
+    if (act === 'cancel') return cancel();
+    if (act === 'new') { ask(); return render(); }
+    if (act === 'del') ans = ans.slice(0, -1);
+    else if (btn.dataset.n != null && ans.length < 6) ans += btn.dataset.n;
+    else if (act === 'ok') {
+      if (+ans === a * b) return setPin(next, cancel, { title: '새 비밀번호 정하기' });
+      ans = '';
+      render();
+      const el = $('.recover-q'); el.classList.add('shake');
+      return;
+    }
+    $('.recover-a').textContent = ans || '?';
+  };
 }
 
 // ---------- 대화상자 ----------
@@ -1129,9 +1241,150 @@ function modal(html, buttons, cls = '') {
   });
 }
 
+// ---------- 도움말 ----------
+// 화면마다 ❓ 버튼 → 그 화면에서 할 일만 큰 글씨로. 채점·학습지 화면은 처음 한 번 저절로 보여 줌
+const HELP = {
+  home: ['처음 화면', [
+    '<b>덧셈 · 뺄셈 · 곱셈 · 구구단</b> 중 하나를 누르면, 어떤 문제를 몇 개 풀지 고를 수 있어요.',
+    '<b>섞어 풀기</b>는 여러 가지 문제를 한 번에 풀어요.',
+    '<b>틀린 문제 다시 풀기</b>가 보이면, 전에 틀린 문제만 모아서 다시 풀 수 있어요.',
+    '풀던 학습지가 있으면 위쪽에 <b>이어서 풀기</b>가 나와요.',
+    '오른쪽 위 <b>⚙️</b>는 부모님 메뉴예요. (비밀번호가 필요해요)',
+  ]],
+  op: ['문제 고르기', [
+    '<b>① 자릿수</b> — 몇 자리 수끼리 계산할지 골라요. 여러 개 골라도 돼요. (✓ 표시가 고른 것)',
+    '<b>② 받아올림 문제 넣기</b> — 켜면 받아올림이 있는 문제가 섞여요. 끄면 쉬운 문제만 나와요.',
+    '<b>③ 문제 수</b> — <b>−</b> <b>+</b> 를 눌러 10문제씩 바꿔요. 숫자 버튼을 누르면 한 번에 바뀌어요.',
+    '<b>예)</b> 칸에 어떤 문제가 나올지 보여요. 누르면 다른 예시가 나와요.',
+    '다 골랐으면 <b>○○문제 시작</b>을 눌러요.',
+  ]],
+  gugu: ['구구단 고르기', [
+    '<b>① 몇 단?</b> — 연습할 단을 눌러요. 여러 개 고르면 섞여서 나와요.',
+    '<b>모두 고르기</b>를 누르면 2단부터 9단까지 모두 골라져요.',
+    '<b>② 문제 수</b> — <b>−</b> <b>+</b> 를 눌러 바꿔요.',
+    '다 골랐으면 <b>○○문제 시작</b>을 눌러요.',
+  ]],
+  mix: ['섞어 풀기', [
+    '덧셈·뺄셈·곱셈·구구단을 <b>각각 몇 문제</b> 풀지 <b>−</b> <b>+</b> 로 정해요.',
+    '풀지 않을 것은 <b>0문제</b>로 두면 돼요.',
+    '자릿수나 받아올림, 단은 <b>각 메뉴에서 마지막으로 고른 대로</b> 나와요.',
+    '다 골랐으면 <b>○○문제 시작</b>을 눌러요.',
+  ]],
+  sheet: ['문제 푸는 방법', [
+    '<b>펜으로 점선 네모 칸</b>에 답을 써요. 한 칸에 숫자 하나씩 써요.',
+    '세로셈은 <b>오른쪽 칸부터</b> 자리를 맞춰 써요.',
+    '받아올림 숫자는 위쪽 빈 곳에 작게 써도 돼요. 채점할 때는 답 칸만 봐요.',
+    '<b>✏️</b> 쓰기 · <b>🧽</b> 지우기(문지르면 지워져요) · <b>↩️</b> 방금 쓴 것 취소',
+    '한 쪽을 다 쓰면 <b>다음 ▶</b>, 마지막 쪽에서는 <b>다 풀었어요!</b>를 눌러요.',
+    '손가락으로 안 써지면 부모님 메뉴에서 <b>손가락으로도 쓰기</b>를 켜 주세요.',
+  ]],
+  grade: ['채점하는 방법 (어른용)', [
+    '앱이 아이 글씨를 읽어서 <b>미리 채점</b>해 두었어요.',
+    '<b>빨간 동그라미 ○</b>는 맞음, <b>빨간 빗금 ╱</b>은 틀림이에요.',
+    '<b>✎ 숫자</b>는 앱이 읽은 답, <b>초록 숫자</b>는 정답이에요.',
+    '<b>노란 테두리</b> 문제는 앱이 글씨를 잘 못 읽은 문제예요. 아이 글씨를 보고 확인해 주세요.',
+    '채점이 잘못됐으면 <b>그 문제를 한 번 누르면</b> ○ ↔ ╱ 가 바뀌어요.',
+    '위쪽 <b>틀린 것</b>, <b>노란 칸</b> 버튼을 누르면 그 문제만 보여서 빨리 볼 수 있어요.',
+    '다 봤으면 오른쪽 위 <b>채점 완료</b>를 눌러요.',
+  ]],
+  result: ['결과 보기', [
+    '별과 점수가 나와요. 잘한 만큼 칭찬해 주세요!',
+    '<b>틀린 ○문제 다시 풀기</b>를 누르면 틀린 문제만 다시 풀어요.',
+    '틀린 문제는 처음 화면의 <b>틀린 문제 다시 풀기</b>에도 모여 있어요.',
+  ]],
+  parent: ['부모님 메뉴', [
+    '<b>아이 이름</b> — 시작 화면과 처음 화면에 나오는 이름이에요.',
+    '<b>손가락으로도 쓰기</b> — 켜면 손가락으로도 써져요. 펜을 쓴다면 꺼 두세요. (손바닥이 닿아도 안 써지게)',
+    '<b>화면 돌리기 허용</b> — 끄면 화면이 세로로 고정돼요.',
+    '<b>풀이 시간 재기</b> — 켜면 다 푼 뒤 걸린 시간이 나와요.',
+    '<b>비밀번호 바꾸기</b> — 부모님 비밀번호를 새로 정해요.',
+    '<b>기록</b> — 날짜별로 무엇을 풀었고 몇 점이었는지 보여요.',
+  ]],
+  pin: ['비밀번호', [
+    '부모님이 정한 <b>숫자 4자리</b>를 눌러요.',
+    '틀리게 누르면 다시 누를 수 있어요. <b>⌫</b> 는 한 칸 지우기예요.',
+    '비밀번호가 생각나지 않으면 아래 <b>비밀번호를 잊었어요</b>를 누르세요. 기록은 지워지지 않아요.',
+  ]],
+  recover: ['비밀번호 찾기', [
+    '화면의 곱셈 답을 숫자 버튼으로 누르고 <b>확인</b>을 눌러요. 계산기를 써도 돼요.',
+    '맞히면 <b>새 비밀번호 4자리</b>를 정할 수 있어요.',
+    '문제가 어려우면 <b>다른 문제로 바꾸기</b>를 눌러요.',
+  ]],
+};
+const helpBtn = key => `<button class="help-btn" data-help="${key}" aria-label="도움말">❓<span>도움말</span></button>`;
+function showHelp(key) {
+  const [title, items] = HELP[key] || HELP.home, h = $('#help');
+  h.innerHTML = `<div class="help-card"><h3>❓ ${title}</h3><ul>${items.map(t => `<li>${t}</li>`).join('')}</ul>
+    <button class="btn primary big" data-close>알겠어요</button></div>`;
+  h.hidden = false;
+  h.onclick = e => { if (e.target.closest('[data-close]') || e.target === h) h.hidden = true; };
+}
+function autoHelp(key) {
+  if (S.helpSeen[key]) return;
+  S.helpSeen[key] = true;
+  save();
+  showHelp(key);
+}
+// ❓ 버튼은 어느 화면·창에서든 이 처리기가 먼저 받음 (아래 화면의 클릭 처리로 넘기지 않음)
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-help]');
+  if (!b) return;
+  e.stopPropagation();
+  showHelp(b.dataset.help);
+}, true);
+
+// ---------- 자동 업데이트 ----------
+// 새 버전이 올라와 있으면, 아이가 문제를 풀고 있지 않을 때(시작·처음 화면) 알아서 새로 불러옴.
+// "앱을 완전히 닫았다 열기"를 몰라도 되게. 같은 버전으로 두 번 새로 불러오지는 않음
+let lastUpdateCheck = 0, updateReady = false;
+async function checkUpdate() {
+  if (Date.now() - lastUpdateCheck < 10 * 60 * 1000 || navigator.onLine === false) return;
+  lastUpdateCheck = Date.now();
+  try {
+    const t = await fetch('app.js', { cache: 'no-store' }).then(r => (r.ok ? r.text() : ''));
+    const m = t.match(/const VERSION = '([^']+)'/);
+    if (m && m[1] !== VERSION && sessionStorage.getItem('tumath.reloadedFor') !== m[1]) {
+      updateReady = m[1];
+      applyUpdateIfIdle();
+    }
+  } catch (e) { /* 인터넷이 없으면 다음에 */ }
+}
+function applyUpdateIfIdle() {
+  if (!updateReady || !['intro', 'home'].includes(curScreen) || !$('#modal').hidden) return;
+  try { sessionStorage.setItem('tumath.reloadedFor', updateReady); } catch (e) { /* 무시 */ }
+  save();
+  location.reload();
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) checkUpdate(); });
+
+// ---------- 오류가 나도 멈추지 않게 ----------
+// 예상 못 한 오류가 나면 쉬운 말로 알리고 처음 화면으로. 연달아 나면 풀던 학습지만 비우고 다시 (기록·비밀번호는 그대로)
+let crashCount = 0, crashOpen = false;
+function onCrash(err) {
+  const msg = String(err && (err.message || err) || '');
+  if (/ResizeObserver|Script error/i.test(msg)) return;           // 브라우저가 내는 무해한 알림
+  console.error(err);
+  if (crashOpen) return;
+  crashOpen = true;
+  crashCount++;
+  if (crashCount >= 2 && S.current) { S.current = null; save(); }
+  modal('<h3>잠깐 문제가 생겼어요</h3><p>처음 화면으로 돌아갈게요.<br>아이 기록은 그대로 있어요.</p>', [{ label: '처음 화면으로', value: true, primary: true }])
+    .then(() => { crashOpen = false; try { home(); } catch (e) { location.reload(); } });
+}
+window.addEventListener('error', e => onCrash(e.error || e.message));
+window.addEventListener('unhandledrejection', e => onCrash(e.reason));
+
 // ---------- 시작 ----------
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || ['localhost', '127.0.0.1'].includes(location.hostname))) {
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }
-applyOrientation();
-intro();
+try {
+  applyOrientation();
+  intro();
+} catch (e) {
+  console.error(e);
+  S.current = null;   // 풀던 학습지 때문에 못 열리면 그것만 비우고 다시
+  save();
+  intro();
+}
+setTimeout(checkUpdate, 3000);

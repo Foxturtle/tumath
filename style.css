@@ -427,3 +427,28 @@ input[type=text] { -webkit-user-select: text; user-select: text; }
 .recover-q { font-size: 2.2rem; font-weight: 900; font-variant-numeric: tabular-nums; margin: 4px 0 6px; }
 .recover-a { display: inline-block; min-width: 3.5em; border-bottom: 3px solid var(--accent); color: var(--accent); }
 .keypad .ok { background: var(--accent); border-color: var(--accent); color: #fff; font-size: 1.3rem; }
+
+/* ---------- 자주 틀리는 문제 ---------- */
+.stats-btn { display: grid; gap: 2px; text-align: left; padding: 16px 20px; font-size: 1.25rem; background: #eef5ff; border-color: #c7dbf5; color: #2a5d9f; white-space: normal; }
+.stats-btn small { font-size: .9rem; font-weight: 500; color: var(--muted); }
+.stats .period { justify-content: flex-start; }
+.stats .summary { font-size: 1.15rem; display: block; }
+.stats .summary b { color: var(--accent); font-size: 1.3rem; }
+.stats h4 { margin: 6px 0 0; font-size: 1.05rem; color: var(--muted); }
+.empty-big { font-size: 1.2rem; text-align: center; line-height: 1.6; margin: 8px 0; }
+.empty-big small { font-size: .9rem; color: var(--muted); }
+.weak { display: grid; gap: 8px; padding: 14px; border-radius: 16px; background: #fff7ef; border: 2px solid #f6d3b6; }
+.w-t { font-size: 1.25rem; font-weight: 800; }
+.w-s { font-size: 1.05rem; color: var(--muted); }
+.w-s b { color: var(--text); }
+.weak .btn { justify-self: start; }
+.good { display: flex; justify-content: space-between; align-items: center; font-size: 1.15rem; padding: 4px 2px; }
+.good b { color: var(--good); }
+.sbar { display: block; height: 10px; border-radius: 99px; background: var(--line); overflow: hidden; }
+.sbar i { display: block; height: 100%; border-radius: 99px; }
+.sbar .low { background: #e5534b; }
+.sbar .mid { background: #f0a030; }
+.sbar .high { background: #3aa66b; }
+.srow { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(60px, 1fr) auto; align-items: center; gap: 10px; font-size: 1rem; }
+.srow b { font-variant-numeric: tabular-nums; color: var(--muted); font-weight: 700; }
+@media (max-width: 480px) { .srow { grid-template-columns: 1fr auto; } .srow .sbar { grid-column: 1 / -1; grid-row: 2; } }

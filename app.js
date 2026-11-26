@@ -2,7 +2,7 @@
 // 연산 연습 — 덧셈·뺄셈·곱셈·구구단 손글씨 학습지 (자동 채점 + 부모 확인, 틀린 문제 다시 풀기)
 // 누가 써도(IT에 익숙하지 않은 어르신도) 도움 없이 쓸 수 있게: 처음 안내, 화면별 도움말, 자동 업데이트·복구
 
-const VERSION = '2026.11.26-b';   // 부모님 메뉴에 표시 — 기기가 최신 버전인지 확인용
+const VERSION = '2026.11.26-c';   // 부모님 메뉴에 표시 — 기기가 최신 버전인지 확인용
 const N = 10000;          // 획 좌표 정규화 단위 (카드 크기 대비)
 const LW = 4;             // 펜 굵기(px)
 const INK = '#1d3c8f';
@@ -177,9 +177,16 @@ const blocks = (ratio, count) => {                 // 비율표를 20문제 묶�
 };
 const boxCount = (op, type) => { const [da, db] = digitsOf(type); return op === '+' ? Math.max(da, db) + 1 : op === '-' ? da : da + db; };
 
+// 특정 유형만 연습할 때: only='carry'면 받아올림(내림·올림) 있는 문제만, 'zero'면 0을 건너뛰는 받아내림만.
+// 그 자릿수에 해당 유형이 없으면 원래 비율 그대로
+function focusRatio(ratio, only) {
+  if (!only) return ratio;
+  const r = Object.fromEntries(Object.entries(ratio).filter(([k]) => (only === 'zero' ? k === 'zero' : k !== 'none')));
+  return Object.keys(r).length ? r : ratio;
+}
 // op 문제 n개. types 여러 개면 고르게 나눔. carryOn=false면 받아올림/받아내림/올림 없는 문제만.
 // 같은 문제는 되도록 안 나오게 (1자리+1자리처럼 문제 수가 적으면 다 낸 뒤에는 겹칠 수 있음)
-function makeOp(op, types, n, carryOn = true) {
+function makeOp(op, types, n, carryOn = true, only = '') {
   const counts = types.map(() => Math.floor(n / types.length));
   shuffle([...types.keys()]).slice(0, n % types.length).forEach(i => counts[i]++);
   const seen = new Set(), v = [], h = [], big = [];
@@ -193,16 +200,16 @@ function makeOp(op, types, n, carryOn = true) {
     const m = counts[i];
     if (!m) return;
     if (op === '×' && BIG_MUL(type)) {
-      blocks(carryOn ? MIX['×'] : NO_CARRY, m).forEach(cat => big.push(make(type, cat, 'vm')));
+      blocks(carryOn ? focusRatio(MIX['×'], only) : NO_CARRY, m).forEach(cat => big.push(make(type, cat, 'vm')));
       return;
     }
     const nv = Math.ceil(m / 2), nh = m - nv;
     if (carryOn && (type === '2+2' || type === '2-2')) {
-      blocks(RATIO[op].v, nv).forEach(cat => v.push(make(type, cat, 'v')));
-      blocks(RATIO[op].h, nh).forEach(cat => h.push(make(type, cat, 'h')));
+      blocks(focusRatio(RATIO[op].v, only), nv).forEach(cat => v.push(make(type, cat, 'v')));
+      blocks(focusRatio(RATIO[op].h, only), nh).forEach(cat => h.push(make(type, cat, 'h')));
       return;
     }
-    const ratio = !carryOn ? NO_CARRY : op === '×' ? MIX['×'] : MIX[type];
+    const ratio = !carryOn ? NO_CARRY : focusRatio(op === '×' ? MIX['×'] : MIX[type], only);
     blocks(ratio, m).forEach((cat, j) => (j < nv ? v : h).push(make(type, cat, j < nv ? 'v' : 'h')));
   });
   shuffle(v); shuffle(h); shuffle(big);
@@ -211,6 +218,54 @@ function makeOp(op, types, n, carryOn = true) {
   while (v.length || h.length) pages.push([...v.splice(0, 2), ...h.splice(0, 2)]);
   return pages.concat(chunk(big, 2));
 }
+// ---------- 유형 분석 (자주 틀리는 문제) ----------
+// 문제 하나에 붙는 유형들: 받아올림 여부(c:), 자릿수(t:), 구구단 단(g:)
+const typeOfProblem = p => p.t || `${String(p.a).length}${p.op === '×' ? 'x' : p.op}${String(p.b).length}`;   // 옛 문제는 자릿수로 추정
+function tagsOf(p) {
+  if (isGu(p)) return [`g:${p.a}`];
+  const t = typeOfProblem(p);
+  if (p.op === '+') return [carryCount(p.a, p.b) ? 'c:+c' : 'c:+n', `t:${t}`];
+  if (p.op === '-') {
+    if (t === '1-1') return [`t:${t}`];                                   // 1자리 뺄셈은 받아내림이 없음
+    const { n, zero } = borrowInfo(p.a, p.b);
+    return [zero ? 'c:-z' : n ? 'c:-b' : 'c:-n', `t:${t}`];
+  }
+  return [mulCarry(p.a, p.b) ? 'c:×c' : 'c:×n', `t:${t}`];
+}
+const TAG_LABEL = {
+  'c:+n': '받아올림이 없는 덧셈', 'c:+c': '받아올림이 있는 덧셈',
+  'c:-n': '받아내림이 없는 뺄셈', 'c:-b': '받아내림이 있는 뺄셈', 'c:-z': '0을 건너뛰는 받아내림 (예: 403 − 127)',
+  'c:×n': '올림이 없는 곱셈', 'c:×c': '올림이 있는 곱셈',
+};
+const tagLabel = tag => TAG_LABEL[tag] || (tag.startsWith('g:') ? `구구단 ${tag.slice(2)}단`
+  : `${{ '+': '덧셈', '-': '뺄셈', 'x': '곱셈' }[tag.match(/[+\-x]/)[0]]} ${typeLabel(tag.slice(2))}`);
+const tagGroup = tag => tag.startsWith('g:') ? '구구단' : /[+]/.test(tag) ? '덧셈' : /[-]/.test(tag) ? '뺄셈' : '곱셈';
+// 채점한 학습지 하나의 유형별 [맞은 수, 푼 수]
+function sheetStats(probs, marks) {
+  const st = {};
+  probs.forEach((p, k) => tagsOf(p).forEach(tag => {
+    const s = st[tag] || (st[tag] = [0, 0]);
+    if (marks[k] === 'o') s[0]++;
+    s[1]++;
+  }));
+  return st;
+}
+// 그 유형만 모은 연습 학습지 (20문제). 자릿수는 그동안 푼 자릿수 중 그 유형이 나올 수 있는 것
+function practicePages(tag, usedTypes) {
+  if (tag.startsWith('g:')) return makeMulMixed([+tag.slice(2)], 20);
+  if (tag.startsWith('t:')) {
+    const t = tag.slice(2), op = t.includes('+') ? '+' : t.includes('-') ? '-' : '×';
+    return makeOp(op, [t], 20, true);
+  }
+  const op = tag[2], kind = op === '+' ? 'add' : op === '-' ? 'sub' : 'mul';
+  const only = tag.endsWith('z') ? 'zero' : tag.endsWith('n') ? '' : 'carry';
+  let types = usedTypes.filter(t => KINDS[kind].types.includes(t));
+  if (only === 'zero') types = types.filter(t => t.startsWith('3-'));
+  if (only === 'carry' && op === '-') types = types.filter(t => t !== '1-1');
+  if (!types.length) types = only === 'zero' ? ['3-2'] : [KINDS[kind].def[0]];
+  return makeOp(op, types, 20, tag.endsWith('n') ? false : true, only);
+}
+
 // 예전 방식 이름 (2자리 덧셈·뺄셈) — 시험 도구 등에서 사용
 const makeArith = (op, n = 20) => makeOp(op, [op === '+' ? '2+2' : '2-2'], n, true);
 
@@ -936,10 +991,10 @@ function finish() {
   probs.forEach((p, k) => {
     const key = keyOf(p);
     if (c.marks[k] === 'o') { score++; S.retry = S.retry.filter(r => keyOf(r) !== key); }
-    else if (!S.retry.some(r => keyOf(r) === key)) S.retry.push({ op: p.op, a: p.a, b: p.b, fmt: p.fmt, n: boxesOf(p) });
+    else if (!S.retry.some(r => keyOf(r) === key)) S.retry.push({ op: p.op, a: p.a, b: p.b, fmt: p.fmt, n: boxesOf(p), t: isGu(p) ? undefined : typeOfProblem(p) });
   });
   const elapsed = c.elapsed || 0;
-  S.history.unshift({ date: new Date().toISOString(), title: c.title, score, total: probs.length, elapsed });
+  S.history.unshift({ date: new Date().toISOString(), title: c.title, score, total: probs.length, elapsed, stats: sheetStats(probs, c.marks) });
   S.history.length = Math.min(S.history.length, 300);
   S.last = { title: c.title, pages: c.pages, ink: c.ink, marks: c.marks, pageSize: c.pageSize, score, total: probs.length, elapsed };
   S.current = null;
@@ -985,6 +1040,7 @@ function parentMenu() {
   app.innerHTML = `
     <header class="bar"><button class="icon-btn" data-act="home" aria-label="처음으로">🏠</button><div class="title">부모님 메뉴</div>${helpBtn('parent')}</header>
     <main class="parent">
+      <button class="btn stats-btn" data-act="stats">📊 자주 틀리는 문제 보기<small>어떤 문제를 더 연습하면 좋을지 알려 줘요</small></button>
       <section><h3>설정</h3>
         <div class="switch-row"><span>아이 이름<small>시작 화면과 홈에 나와요 (이니셜이나 별명 추천)</small></span>
           <button class="btn name-btn" data-act="name">${kid() || '정하기'} ✎</button></div>
@@ -1008,11 +1064,64 @@ function parentMenu() {
   app.onclick = async e => {
     const a = e.target.closest('[data-act]')?.dataset.act;
     if (a === 'home') home();
+    else if (a === 'stats') statsScreen();
     else if (a === 'name') nameEditor();
     else if (a === 'pin') setPin(parentMenu, parentMenu);
     else if (a === 'clear' && await modal('<p>다시 풀기 목록을 비울까요?</p>', [{ label: '취소', value: false }, { label: '비우기', value: true, primary: true }])) {
       S.retry = []; save(); parentMenu();
     }
+  };
+}
+
+// ---------- 화면: 자주 틀리는 문제 (부모님) ----------
+// 채점한 학습지들의 유형별 정답률. 8문제 이상 푼 유형만 "연습할 것 / 잘하는 것"으로 골라 문장으로 보여 줌
+const STAT_DAYS = 28, STAT_MIN = 8;
+function statsScreen(period = 'recent') {
+  setScreen('stats');
+  const since = period === 'recent' ? Date.now() - STAT_DAYS * 864e5 : 0;
+  const sheets = S.history.filter(h => h.stats && new Date(h.date).getTime() >= since);
+  const agg = {};
+  let total = 0, right = 0;
+  sheets.forEach(h => {
+    total += h.total; right += h.score;
+    Object.entries(h.stats).forEach(([tag, [r, n]]) => { const a = agg[tag] || (agg[tag] = [0, 0]); a[0] += r; a[1] += n; });
+  });
+  const rows = Object.entries(agg).map(([tag, [r, n]]) => ({ tag, r, n, p: r / n }));
+  // 같은 계산에서 받아올림 같은 유형이 약하면, 같은 이유로 겹치는 자릿수 항목은 빼서 한 번만 보여 줌
+  const weakAll = rows.filter(x => x.n >= STAT_MIN && x.p < .85).sort((a, b) => a.p - b.p);
+  const weakGroups = new Set(weakAll.filter(x => x.tag.startsWith('c:')).map(x => tagGroup(x.tag)));
+  const weak = weakAll.filter(x => !(x.tag.startsWith('t:') && weakGroups.has(tagGroup(x.tag)))).slice(0, 3);
+  const good = rows.filter(x => x.n >= STAT_MIN && x.p >= .9).sort((a, b) => b.p - a.p || b.n - a.n).slice(0, 3);
+  const usedTypes = [...new Set(rows.filter(x => x.tag.startsWith('t:')).map(x => x.tag.slice(2)))];
+  const pct = x => Math.round(x.p * 100);
+  const bar = x => `<i class="sbar"><i class="${x.p < .7 ? 'low' : x.p < .85 ? 'mid' : 'high'}" style="width:${pct(x)}%"></i></i>`;
+  const order = x => (x.tag.startsWith('c:') ? 0 : x.tag.startsWith('t:') ? 1 : 2) * 100 + (+x.tag.replace(/\D/g, '').slice(0, 2) || 0);
+  const groups = ['덧셈', '뺄셈', '곱셈', '구구단'].map(g => [g, rows.filter(x => tagGroup(x.tag) === g).sort((a, b) => order(a) - order(b))]).filter(([, xs]) => xs.length);
+  const enough = rows.some(x => x.n >= STAT_MIN);
+  app.innerHTML = `
+    <header class="bar"><button class="icon-btn" data-act="back" aria-label="부모님 메뉴로">◀</button><div class="title">자주 틀리는 문제</div>${helpBtn('stats')}</header>
+    <main class="parent stats">
+      <div class="row period"><button class="btn${period === 'recent' ? ' primary' : ''}" data-period="recent">최근 4주</button><button class="btn${period === 'all' ? ' primary' : ''}" data-period="all">전체</button></div>
+      ${!sheets.length ? `<section><p class="empty-big">아직 분석할 기록이 없어요.<br>학습지를 풀고 채점하면 여기에 모여요.</p><p class="empty">(이 기능이 생긴 뒤에 채점한 학습지부터 보여요)</p></section>` : `
+      <section class="summary"><b>${sheets.length}</b>장 · <b>${total}</b>문제 풀었어요 · 정답률 <b>${Math.round(right / total * 100)}%</b></section>
+      <section><h3>🔸 더 연습하면 좋은 것</h3>
+        ${weak.length ? weak.map(x => `<div class="weak">
+          <div class="w-t">${tagLabel(x.tag)}</div>
+          <div class="w-s">${x.n}문제 중 <b>${x.r}문제</b> 맞았어요 (${pct(x)}%)</div>${bar(x)}
+          <button class="btn primary" data-practice="${x.tag}">이 문제로 연습하기 (20문제)</button></div>`).join('')
+        : `<p class="empty-big">${enough ? '지금은 특별히 어려워하는 문제가 없어요 👍' : '조금 더 풀면 알려 드릴게요.<br><small>(같은 유형을 8문제 이상 풀어야 해요)</small>'}</p>`}
+      </section>
+      ${good.length ? `<section><h3>⭐ 잘하고 있는 것</h3>${good.map(x => `<div class="good"><span>${tagLabel(x.tag)}</span><b>${pct(x)}%</b></div>`).join('')}</section>` : ''}
+      <section><h3>전체 보기</h3>
+        ${groups.map(([g, xs]) => `<h4>${g}</h4>${xs.map(x => `<div class="srow"><span>${tagLabel(x.tag)}</span>${bar(x)}<b>${x.r}/${x.n}</b></div>`).join('')}`).join('')}
+      </section>`}
+    </main>`;
+  app.onclick = e => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    if (b.dataset.act === 'back') parentMenu();
+    else if (b.dataset.period) statsScreen(b.dataset.period);
+    else if (b.dataset.practice) begin(`연습 · ${tagLabel(b.dataset.practice).replace(/ \(예:.*\)$/, '')}`, practicePages(b.dataset.practice, usedTypes));
   };
 }
 
@@ -1292,7 +1401,15 @@ const HELP = {
     '<b>틀린 ○문제 다시 풀기</b>를 누르면 틀린 문제만 다시 풀어요.',
     '틀린 문제는 처음 화면의 <b>틀린 문제 다시 풀기</b>에도 모여 있어요.',
   ]],
+  stats: ['자주 틀리는 문제', [
+    '채점한 학습지를 모아서 <b>어떤 문제를 자주 틀리는지</b> 보여 줘요.',
+    '<b>더 연습하면 좋은 것</b> — 맞힌 비율이 낮은 문제예요. <b>이 문제로 연습하기</b>를 누르면 그런 문제만 20개 나와요.',
+    '<b>잘하고 있는 것</b> — 잘 맞히는 문제예요. 칭찬해 주세요!',
+    '<b>전체 보기</b> — 문제 종류마다 맞힌 비율을 막대로 보여 줘요. 빨간색일수록 어려워하는 거예요.',
+    '<b>최근 4주</b> / <b>전체</b> 버튼으로 기간을 바꿀 수 있어요.',
+  ]],
   parent: ['부모님 메뉴', [
+    '<b>📊 자주 틀리는 문제 보기</b> — 어떤 문제를 더 연습하면 좋을지 알려 줘요.',
     '<b>아이 이름</b> — 시작 화면과 처음 화면에 나오는 이름이에요.',
     '<b>손가락으로도 쓰기</b> — 켜면 손가락으로도 써져요. 펜을 쓴다면 꺼 두세요. (손바닥이 닿아도 안 써지게)',
     '<b>화면 돌리기 허용</b> — 끄면 화면이 세로로 고정돼요.',

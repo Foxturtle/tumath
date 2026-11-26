@@ -1,5 +1,5 @@
 // 오프라인용: 인터넷이 되면 항상 최신 파일, 안 되면 저장해 둔 파일 사용
-const CACHE = 'tumath-v4';
+const CACHE = 'tumath-v5';
 const ASSETS = ['./', 'index.html', 'style.css', 'digits.js', 'app.js', 'model/digits.bin', 'manifest.webmanifest',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'icons/apple-touch-icon.png'];
 

@@ -2,7 +2,7 @@
 // 연산 연습 — 덧셈·뺄셈·곱셈·구구단 손글씨 학습지 (자동 채점 + 부모 확인, 틀린 문제 다시 풀기)
 // 누가 써도(IT에 익숙하지 않은 어르신도) 도움 없이 쓸 수 있게: 처음 안내, 화면별 도움말, 자동 업데이트·복구
 
-const VERSION = '2026.11.26-d';   // 부모님 메뉴에 표시 — 기기가 최신 버전인지 확인용
+const VERSION = '2026.11.26-e';   // 부모님 메뉴에 표시 — 기기가 최신 버전인지 확인용
 const N = 10000;          // 획 좌표 정규화 단위 (카드 크기 대비)
 const LW = 4;             // 펜 굵기(px)
 const INK = '#1d3c8f';
@@ -1132,17 +1132,38 @@ function parentMenu() {
 }
 
 // 글씨 자료를 파일 하나로 만들어 휴대폰 공유 창(카카오톡·메일 등)으로 보냄. 공유가 안 되는 기기(PC 등)는 내려받기.
-// 공유할 수 있는 파일 형식이 정해져 있어서, 내용은 JSON이지만 .txt로 만듦
+// 카카오톡은 .txt 파일을 받으면 파일이 아니라 긴 글(메시지)로 바꿔 버려서, 내용(JSON)을 PDF 안에 넣어 보냄.
+// PDF를 열면 안내 한 쪽만 보이고, 자료는 PC 도구(tools/digits_data.py)가 꺼내 읽음
+function samplesPdf(json, count, created) {
+  const esc = s => s.replace(/[\\()]/g, '\\$&');
+  const lines = ['TU-MATH handwriting samples', `count: ${count}`, `created: ${created}`, 'Read with tools/digits_data.py on the PC.'];
+  const text = 'BT /F1 16 Tf 56 780 Td 22 TL ' + lines.map(l => `(${esc(l)}) Tj T*`).join(' ') + ' ET';
+  const objs = [
+    '<< /Type /Catalog /Pages 2 0 R /TUMathData 6 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>',
+    `<< /Length ${text.length} >>\nstream\n${text}\nendstream`,
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+    `<< /Length ${json.length} >>\nstream\n${json}\nendstream`,       // JSON은 영문·숫자·기호만 있어서 글자 수 = 바이트 수
+  ];
+  let pdf = '%PDF-1.4\n';
+  const offs = objs.map((o, i) => { const at = pdf.length; pdf += `${i + 1} 0 obj\n${o}\nendobj\n`; return at; });
+  const xref = pdf.length;
+  pdf += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n` + offs.map(n => String(n).padStart(10, '0') + ' 00000 n \n').join('')
+    + `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return pdf;
+}
+
 async function shareSamples() {
   const samples = loadSamples();
   if (!samples.length) return;
-  const day = new Date().toISOString().slice(0, 10);
-  const body = JSON.stringify({ app: 'tumath-digits', version: VERSION, created: new Date().toISOString(), count: samples.length, samples });
-  const file = new File([body], `연산연습_글씨자료_${day}_${samples.length}개.txt`, { type: 'text/plain' });
+  const created = new Date().toISOString(), day = created.slice(0, 10);
+  const body = JSON.stringify({ app: 'tumath-digits', version: VERSION, created, count: samples.length, samples });
+  const file = new File([samplesPdf(body, samples.length, created)], `연산연습_글씨자료_${day}_${samples.length}개.pdf`, { type: 'application/pdf' });
   let sent = false;
   try {
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      await navigator.share({ files: [file], title: '연산 연습 글씨 자료' });
+      await navigator.share({ files: [file] });                       // 제목·글을 같이 넣으면 일부 앱이 파일을 빼고 글만 보냄
       sent = true;
     }
   } catch (e) {
